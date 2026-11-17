@@ -102,6 +102,13 @@ Build log for the BOCHK x HKU Wealthathon practice app. Newest entries are at th
   - Progress: the trend, weak spots and by-difficulty view all use your own trades.
   - Coach: critiques the requesting player on their own trades.
 
+### 12. Who's online
+- One shared Supabase Realtime presence channel (`src/lib/presence.ts`). No database table is needed.
+- The nav shows the other player with a green dot and what they're doing ("in a session", "on the leaderboard", …), or "offline".
+- The home page shows whether your team-mate is online next to the Team session button.
+- Signing out leaves the channel at once; closing the tab drops off within a few seconds.
+- Verified with two browsers: online on sign-in, page label follows navigation, offline on sign-out.
+
 ---
 
 ## Fixes and corrections (found during testing)

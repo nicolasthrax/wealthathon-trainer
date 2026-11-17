@@ -7,6 +7,7 @@ import { currentRules, useStore, type Profile, type ScenarioMeta, type ScoreRow,
 import { EVENT_RULES } from '@config/event-rules';
 import type { Difficulty } from '@engine/types';
 import { fmtPct } from '@/lib/format';
+import { usePresence } from '@/lib/presence';
 
 const DIFFS: Difficulty[] = ['easy', 'medium', 'hard'];
 
@@ -65,6 +66,8 @@ export default function Home() {
   }
 
   const partners = profiles.filter((p) => p.id !== user?.id);
+  const onlineNow = usePresence();
+  const partnersOnline = partners.filter((p) => onlineNow.some((u) => u.userId === p.id));
   const myTeamSessions = invites.filter((x) => x.status === 'briefing' || x.status === 'active');
   const best = scores.length ? Math.max(...scores.map((s) => s.composite)) : null;
   const avg5 = scores.length ? scores.slice(0, 5).reduce((a, s) => a + s.composite, 0) / Math.min(5, scores.length) : null;
@@ -118,6 +121,9 @@ export default function Home() {
             <div className="row" style={{ marginTop: 14 }}>
               <button className="primary" disabled={busy || !options.length} onClick={() => start(false)}>Start session</button>
               <button disabled={busy || !options.length || partners.length === 0} onClick={() => start(false, true)} title="Shared portfolio, same news, both of you can trade">👥 Team session with {partners.map((p) => p.display_name).join(', ') || 'team-mate'}</button>
+              {partners.length > 0 && (
+                <span className="small dim"><span className={`dot ${partnersOnline.length ? 'on' : ''}`} />{partnersOnline.length ? `${partnersOnline.map((p) => p.display_name).join(', ')} online` : `${partners.map((p) => p.display_name).join(', ')} offline`}</span>
+              )}
               <span className="small dim">
                 {EVENT_RULES.difficulty[difficulty].label}: {EVENT_RULES.difficulty[difficulty].events.join('-')} headlines
                 {EVENT_RULES.difficulty[difficulty].pauseAllowed ? ', pause allowed' : ''}{difficulty === 'hard' ? ', fake-outs, tighter client limits' : ''}.
