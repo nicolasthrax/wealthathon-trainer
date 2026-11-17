@@ -143,7 +143,7 @@ export const PLAYBOOKS: Playbook[] = [
   {
     id: 'credit-stress', name: 'Credit stress', kind: 'news', lessonId: 'drivers',
     match: [{ factor: 'CREDIT', sign: 1 }],
-    trigger: 'Defaults, fund freezes, widening credit [[spread]]s.',
+    trigger: 'Defaults, fund freezes, widening [[spread]]s.',
     moves: [{ assetId: 'HY', dir: -1, strength: 2 }, { assetId: 'IG', dir: -1, strength: 1 }, { assetId: 'AIA', dir: -1, strength: 1 }],
     why: 'When investors fear defaults, they demand more yield to lend to risky companies, so [[high-yield]] bond prices drop most. Insurers holding credit suffer too.',
     size: 'Cut high-yield exposure; switch to government bonds.',

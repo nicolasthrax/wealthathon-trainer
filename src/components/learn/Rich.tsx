@@ -24,7 +24,7 @@ export function Term({ id, children }: { id: string; children?: ReactNode }) {
 }
 
 /** Inline form of a glossary term: lower-case common words, keep names and acronyms. */
-function inlineTerm(id: string): string {
+export function inlineTerm(id: string): string {
   const t = GLOSSARY[id]?.term ?? id;
   return /^[A-Z][A-Z&]|^(Sortino|Fed|HKD|HIBOR|HKMA)/.test(t) ? t.replace(/ \(.*\)$/, '') : t.charAt(0).toLowerCase() + t.slice(1).replace(/ \(.*\)$/, '');
 }

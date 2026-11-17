@@ -4,9 +4,10 @@ import Link from 'next/link';
 import { EVENT_RULES } from '@config/event-rules';
 import { Nav } from '@/components/Nav';
 import { Moves, driverMap } from '@/components/learn/Playbook';
+import { inlineTerm } from '@/components/learn/Rich';
 import { CHEATSHEET_KEY, LESSONS, PLAYBOOKS } from '@/lib/learn';
 
-const strip = (s: string) => s.replace(/\*\*/g, '').replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2').replace(/\[\[([^\]]+)\]\]/g, (_, id: string) => id.replace(/-/g, ' '));
+const strip = (s: string) => s.replace(/\*\*/g, '').replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2').replace(/\[\[([^\]]+)\]\]/g, (_, id: string) => inlineTerm(id));
 
 export default function CheatSheet() {
   useEffect(() => { try { localStorage.setItem(CHEATSHEET_KEY, new Date().toISOString()); } catch { /* private mode */ } }, []);
@@ -48,7 +49,7 @@ export default function CheatSheet() {
             </tbody>
           </table>
         </div>
-        <div className="grid" style={{ gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10 }}>
+        <div className="grid cheat-cols" style={{ gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10 }}>
           <div className="card">
             <h2>Driver map: when this goes up…</h2>
             <table className="t"><tbody>{driverMap().map((d) => <tr key={d.id}><td style={{ width: '38%' }}><b>{d.label}</b></td><td><Moves moves={d.moves} /></td></tr>)}</tbody></table>
@@ -66,7 +67,7 @@ export default function CheatSheet() {
             </ol>
           </div>
         </div>
-        <div className="small dim">Takeaways: {LESSONS.map((l) => `${l.n}. ${l.takeaways[0]}`).join(' ')}</div>
+        <div className="small dim cheat-extra">Takeaways: {LESSONS.map((l) => `${l.n}. ${l.takeaways[0]}`).join(' ')}</div>
       </main>
     </>
   );
