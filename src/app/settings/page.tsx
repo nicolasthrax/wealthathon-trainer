@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { Nav } from '@/components/Nav';
-import { useStore } from '@/lib/store';
+import { supabase, useStore } from '@/lib/store';
 import { EVENT_RULES, type RuleOverrides } from '@config/event-rules';
 import { fmtMoney } from '@/lib/format';
 
@@ -9,6 +9,14 @@ export default function Settings() {
   const { store, ready } = useStore();
   const [o, setO] = useState<RuleOverrides>({});
   const [saved, setSaved] = useState('');
+  const [pw, setPw] = useState('');
+  const [pwMsg, setPwMsg] = useState('');
+  async function changePw() {
+    if (!supabase) return;
+    const { error } = await supabase.auth.updateUser({ password: pw });
+    setPwMsg(error ? error.message : 'Password changed.');
+    if (!error) setPw('');
+  }
   useEffect(() => { if (ready) store.getOverrides().then(setO).catch(() => {}); }, [store, ready]);
   const w = { ...EVENT_RULES.scoring.weights, ...o.weights };
   const sum = w.return + w.sortino + w.drawdown + w.mandate;
@@ -38,6 +46,14 @@ export default function Settings() {
             Transaction costs ({EVENT_RULES.costs.commissionBps}bp commission + per-class spreads)</label>
           <label className="f">Briefing phase (seconds) · file default {EVENT_RULES.clock.briefingSeconds}
             <input inputMode="numeric" value={o.briefingSeconds ?? ''} placeholder={String(EVENT_RULES.clock.briefingSeconds)} onChange={(e) => setO({ ...o, briefingSeconds: e.target.value === '' ? undefined : Number(e.target.value.replace(/\D/g, '')) })} /></label>
+        </div>
+        <div className="card grid">
+          <h2>Change password</h2>
+          <div className="row">
+            <input type="password" autoComplete="new-password" placeholder="New password (8+ characters)" value={pw} onChange={(e) => setPw(e.target.value)} style={{ flex: 1 }} />
+            <button disabled={pw.length < 8} onClick={changePw}>Change</button>
+          </div>
+          {pwMsg && <span className="small">{pwMsg}</span>}
         </div>
         <div className="row"><button className="primary" onClick={save}>Save</button><button onClick={() => setO({})}>Reset to file defaults</button><span className="small up">{saved}</span></div>
       </main>

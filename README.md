@@ -52,14 +52,13 @@ Auth: email + password or magic link. If sign-up emails are slow (Supabase's bui
 
 ### Accounts (allowlist)
 
-Sign-ups are closed by a database trigger: only emails in `private.allowed_users` can create an account, and the display name comes from that table. To change who can use the app, run in the Supabase SQL editor:
+The app is private. The sign-in page shows one button per player (Nicolas, AG): pick your name and enter your password, with no email to type. Browsers stay signed in, and each player can change their password in Settings. Accounts use internal addresses (`nicolas@wealthathon.invalid`, `ag@wealthathon.invalid`) that never receive mail, so a forgotten password is reset from the Supabase dashboard (Authentication → Users).
+
+Sign-ups are closed by a database trigger: only emails in `private.allowed_users` can create an account, and `public.login_accounts()` feeds the name buttons. To add a player, run in the Supabase SQL editor, then create the user under Authentication → Users → Add user (tick "Auto confirm"):
 
 ```sql
-insert into private.allowed_users (email, display_name) values ('someone@example.com', 'Name');
-delete from private.allowed_users where email = 'someone@example.com';
+insert into private.allowed_users (email, display_name) values ('name@wealthathon.invalid', 'Name');
 ```
-
-(Removing a row stops new sign-ups; to remove an existing account, also delete the user under Authentication → Users.)
 
 ### Team mode
 

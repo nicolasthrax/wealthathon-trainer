@@ -31,7 +31,7 @@ export function Nav() {
         {store.kind === 'local' ? 'Offline mode' : online ? 'AI worker online' : 'AI worker offline'}
       </span>
       {user ? (
-        <span className="small dim">{user.email} · <a href="#" onClick={(e) => { e.preventDefault(); void supabase?.auth.signOut(); }}>Sign out</a></span>
+        <span className="small dim">{(user.email ?? '').replace(/@wealthathon\.invalid$/, '').replace(/^.+$/, (n) => (n.length <= 2 ? n.toUpperCase() : n[0].toUpperCase() + n.slice(1)))} · <a href="#" onClick={(e) => { e.preventDefault(); void supabase?.auth.signOut(); }}>Sign out</a></span>
       ) : supabase ? <Link href="/login">Sign in</Link> : null}
     </nav>
   );

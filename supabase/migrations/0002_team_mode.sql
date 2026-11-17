@@ -79,3 +79,12 @@ grant execute on function public.server_now() to authenticated;
 alter publication supabase_realtime add table public.session_inputs;
 alter publication supabase_realtime add table public.sessions;
 alter publication supabase_realtime add table public.participants;
+
+-- The sign-in page lists the allowlisted players by name, so nobody has to type an email.
+-- Accounts use internal addresses (e.g. name@wealthathon.invalid) that never receive mail.
+create or replace function public.login_accounts()
+returns table (display_name text, email text) language sql stable security definer set search_path = '' as $$
+  select a.display_name, a.email from private.allowed_users a order by a.display_name;
+$$;
+revoke execute on function public.login_accounts() from public;
+grant execute on function public.login_accounts() to anon, authenticated;
