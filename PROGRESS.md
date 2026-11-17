@@ -87,7 +87,7 @@ Build log for the BOCHK x HKU Wealthathon practice app. Newest entries are at th
 ### 10. Private accounts
 - **Allowlist:** a database trigger blocks every sign-up that isn't on the list. Guest access was removed and every page requires sign-in.
 - **Sign-in:** pick your name (Nicolas or AG) and type a password, with no email to type. Accounts use internal `@wealthathon.invalid` addresses that never receive mail.
-- **Passwords:** each player can change theirs in Settings.
+- **Passwords:** each player can change theirs in Settings. Set to short passwords chosen by Nicolas, on request.
 
 ---
 
@@ -146,7 +146,7 @@ Build log for the BOCHK x HKU Wealthathon practice app. Newest entries are at th
 ## Open items / next steps
 
 1. **Run the worker on your Mac:** add `SUPABASE_SERVICE_ROLE_KEY` and `WORKER_MODEL=claude-sonnet-5-5` to `.env.local`, then `npm run worker`. This tops up the scenario pool and enables the coach and the pitch judge.
-2. **Change both starting passwords** in Settings. They were shared in chat.
+2. **Passwords** were set on request to short ones (AG and Nicolas). The site is public, so anyone who guesses them can sign in; choose longer ones in Settings if that matters.
 3. **Optional:** turn on leaked-password protection in Supabase Auth settings.
 4. **When the real rules arrive:** edit `config/event-rules.ts` (see the README table) and bump `version`.
 5. **Possible additions:** a recorded strategy-video mode for Round 1, enforced team roles, a team leaderboard, and an in-session chat or ping.
