@@ -55,15 +55,16 @@ table.t td.r, table.t th.r { text-align: right; }
 ol.steps { margin: 6px 0 6px 18px; padding: 0; } ol.steps li { margin: 3px 0; }
 
 /* ── Terminal ──────────────────────────────────────────── */
-.term { height: 100vh; display: grid; grid-template-rows: 38px 1fr 20px; font-size: 12px; overflow: hidden; }
-.term .top { display: flex; align-items: center; gap: 14px; padding: 0 10px; background: var(--panel); border-bottom: 1px solid var(--line); white-space: nowrap; }
+.term { height: 100vh; display: grid; grid-template-rows: 38px 1fr 20px; grid-template-columns: minmax(0, 1fr); font-size: 12px; overflow: hidden; }
+.term .top { display: flex; align-items: center; gap: 14px; padding: 0 10px; min-width: 0; overflow: hidden; background: var(--panel); border-bottom: 1px solid var(--line); white-space: nowrap; }
 .term .top .ttl { font-weight: 700; color: var(--accent); max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .term .top .stat { display: flex; flex-direction: column; line-height: 1.15; } .term .top .stat span { font-size: 9px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; }
 .term .top .stat b { font-family: var(--mono); font-size: 13px; font-weight: 600; }
 .term .top .clock b { font-size: 17px; }
 .term .top .score b { font-size: 19px; color: var(--accent); }
 .term .top .prog { width: 110px; }
-.term .top button { padding: 3px 9px; font-size: 11px; }
+.term .top button { padding: 3px 9px; font-size: 11px; flex: none; }
+.term .top .team { display: flex; gap: 8px; align-items: center; min-width: 0; overflow: hidden; }
 .term .body { display: grid; grid-template-columns: 290px minmax(0, 1fr) 372px; min-height: 0; }
 .term .col { display: grid; min-height: 0; border-right: 1px solid var(--line); }
 .term .col:last-child { border-right: 0; }

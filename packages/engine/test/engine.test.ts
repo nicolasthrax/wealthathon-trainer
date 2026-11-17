@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { EVENT_RULES, applyOverrides } from '@config/event-rules';
 import {
   SessionRunner, buildReport, computeOptimalPath, computeScore, evaluateMandate, expectedImpact, generatePath, mandateViolation,
-  ordersFromWeights, proceduralScenario, replaySession, solveSegment, sortinoFrom, tightenClient, validateScenario, ClientSchema, SharedSession,
+  ordersFromWeights, proceduralScenario, replaySession, solveSegment, sortinoFrom, tightenClient, validateScenario, ClientSchema, SharedSession, buildPlayerStats, liveContribution,
   type Scenario, type Client, type EventRules,
 } from '@engine';
 import { SEED_SCENARIOS } from '@seed/scenarios';
@@ -332,5 +332,56 @@ describe('team sessions (shared lockstep)', () => {
     c.integrate({ seq: 1, tick: 10, kind: 'end', user_id: 'A', participant_id: null, payload: {} });
     expect(c.runner.finished).toBe(true);
     expect(c.runner.tick).toBe(R.clock.totalTicks);
+  });
+});
+
+describe('individual stats in team sessions', () => {
+  const base = { scenario: medium, seed: 'ind', rules: R, client: SEED_CLIENTS[7], difficulty: 'medium' as const };
+  const play = () => {
+    const c = new SharedSession(base);
+    let seq = 0;
+    const place = (tick: number, who: string, assetId: string, side: 'buy' | 'sell', qty: number, source?: string) => {
+      c.advanceTo(tick);
+      c.integrate({ seq: ++seq, tick, kind: 'place', user_id: who, participant_id: who, payload: { assetId, side, qty, type: 'market', ...(source ? { source } : {}) } });
+    };
+    place(0, 'A', 'SPX', 'buy', 300, 'opening');
+    place(0, 'A', 'UST2', 'buy', 30000, 'opening');
+    place(50, 'A', 'TENCENT', 'buy', 2500);   // 15% of NAV in one name: A causes a single-name breach (client max 10%)
+    place(80, 'B', 'GOLD', 'buy', 300);
+    place(200, 'B', 'TENCENT', 'sell', 2500); // B closes A's position: A keeps the P&L up to here, B owns what follows
+    place(400, 'A', 'HSCEI', 'sell', 4000);
+    c.advanceTo(R.clock.totalTicks);
+    return c.runner;
+  };
+  it('player buckets + team opening + financing add up exactly to the team P&L', () => {
+    const r = play();
+    const { players, financing, teamPnl } = buildPlayerStats(r, 1.5, ['A', 'B']);
+    const total = players.reduce((s, p) => s + p.pnl, 0) + financing;
+    expect(total).toBeCloseTo(teamPnl, 4);
+    expect(teamPnl).toBeCloseTo(r.metrics.equity - R.startingCapital, 4);
+    const [a, b, team] = players;
+    expect(team.participantId).toBeNull();
+    expect(team.fills).toBe(2);           // opening allocation is a team decision
+    expect(a.fills).toBe(2); expect(b.fills).toBe(2);
+    expect(a.curve.at(-1)).toBe(Math.round(a.pnl));
+    // B's sale closes the Tencent exposure for the team: A and B hold offsetting Tencent books from then on.
+    const live = liveContribution(r);
+    expect(live.A).toBeCloseTo(a.pnl, 4); expect(live.B).toBeCloseTo(b.pnl, 4);
+  });
+  it('charges a mandate breach to the player whose trade caused it, and scores each player', () => {
+    const r = play();
+    const { players: [a, b] } = buildPlayerStats(r, 1.5, ['A', 'B']);
+    expect(r.breaches.some((x) => x.key === 'maxSingleName')).toBe(true);
+    expect(a.breachesCaused).toBeGreaterThan(0);
+    expect(a.penalisedTicks).toBeGreaterThan(0);
+    expect(b.breachesCaused).toBe(0);
+    expect(b.score.mandate).toBe(100);
+    expect(a.score.mandate).toBeLessThan(100);
+    for (const p of [a, b]) expect(p.score.composite).toBeGreaterThan(0);
+  });
+  it('a player who never trades gets a neutral record', () => {
+    const r = play();
+    const idle = buildPlayerStats(r, 1.5, ['A', 'B', 'C']).players[2];
+    expect(idle.fills).toBe(0); expect(idle.pnl).toBe(0); expect(idle.maxDD).toBe(0); expect(idle.hitRate).toBeNull();
   });
 });

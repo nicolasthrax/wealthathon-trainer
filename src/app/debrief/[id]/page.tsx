@@ -11,6 +11,7 @@ import { LineChart } from '@/components/LineChart';
 import { ClientCard } from '@/components/Briefing';
 import { headlineOf } from '@/components/terminal/panels';
 import { useJob, useStore, type CoachResult, type DebriefRow, type SessionRow } from '@/lib/store';
+import { buildPlayerStats, type PlayerBreakdown } from '@engine/players';
 import { cls, fmtCompact, fmtMoney, fmtPct, SRC_LABEL } from '@/lib/format';
 import { sessionContext as coachPayload } from '@/lib/context';
 
@@ -23,6 +24,8 @@ export default function Debrief({ params }: { params: Promise<{ id: string }> })
   const [optimal, setOptimal] = useState<OptimalResult | null>(null);
   const [debrief, setDebrief] = useState<DebriefRow | null>(null);
   const [err, setErr] = useState('');
+  const [players, setPlayers] = useState<PlayerBreakdown | null>(null);
+  const [pnames, setPnames] = useState<Record<string, string>>({});
   const [coachErr, setCoachErr] = useState('');
 
   useEffect(() => {
@@ -37,6 +40,11 @@ export default function Debrief({ params }: { params: Promise<{ id: string }> })
         const spt = (s.session_minutes * 60) / r.N;
         const rep = buildReport(r, spt);
         setSession(s); setRunner(r); setReport(rep);
+        if (s.team_mode && s.participants?.length) {
+          const profiles = await store.listProfiles();
+          setPnames(Object.fromEntries(s.participants.map((p) => [p.id, profiles.find((x) => x.id === p.user_id)?.display_name ?? 'Player'])));
+          setPlayers(buildPlayerStats(r, spt, s.participants.map((p) => p.id)));
+        }
         const d = await store.getDebrief(id);
         setDebrief(d);
         setTimeout(() => {
@@ -55,7 +63,13 @@ export default function Debrief({ params }: { params: Promise<{ id: string }> })
     if (!runner || !report || !session) return;
     setCoachErr('');
     try {
-      const payload = coachPayload(runner, report, optimal, session);
+      const payload: Record<string, unknown> = coachPayload(runner, report, optimal, session);
+      if (players && session.participant_id) {
+        // Team session: coach the requesting player on their own trades, with the team-mate's numbers for context.
+        const me = players.players.find((p) => p.participantId === session.participant_id);
+        const strip = (p: (typeof players.players)[number]) => ({ ...p, curve: undefined, name: p.participantId ? pnames[p.participantId] : 'Team (opening allocation)' });
+        payload.teamSession = { note: 'Shared portfolio. Critique THIS player (you) mainly on their own trades; the team result is shared.', you: me && strip(me), others: players.players.filter((p) => p !== me).map(strip), financing: players.financing };
+      }
       const j = await store.enqueueJob('coach', payload);
       await store.saveDebrief(id, { coach_job_id: j.id });
       setDebrief((d) => ({ ...(d ?? { session_id: id, report, optimal, coach: null }), coach_job_id: j.id }));
@@ -69,6 +83,10 @@ export default function Debrief({ params }: { params: Promise<{ id: string }> })
     { label: 'You', color: '#5cc4ff', data: report.equity, step: report.curveStep },
     ...(optimal ? [{ label: 'Optimal (mandate-respecting)', color: '#f0b90b', data: optimal.equity, step: optimal.curveStep, dashed: true }] : []),
   ] : [], [report, optimal]);
+  const playerLines = useMemo(() => {
+    const colors = ['#5cc4ff', '#c79bf0', '#7a889c'];
+    return players ? players.players.map((p, i) => ({ label: p.participantId ? pnames[p.participantId] ?? 'Player' : 'Team open', color: colors[i % colors.length], data: p.curve, step: p.curveStep, dashed: !p.participantId })) : [];
+  }, [players, pnames]);
   const ddLines = useMemo(() => report ? [{ label: 'Drawdown', color: '#ff5c74', data: report.drawdown.map((d) => -d), step: report.curveStep }] : [], [report]);
   const markers = useMemo(() => report?.events.map((e) => ({ tick: e.tick, text: '', color: e.reactionTicks === null ? '#4b5869' : '#ffb454' })), [report]);
 
@@ -129,6 +147,39 @@ export default function Debrief({ params }: { params: Promise<{ id: string }> })
             </tbody></table>
           </div>
         </div>
+
+        {players && (
+          <div className="card">
+            <h2>Individual scores <span className="dim small">· each player&apos;s own trades, scored with the same formula as the team</span></h2>
+            <div className="grid" style={{ gridTemplateColumns: 'minmax(0, 1.3fr) minmax(0, 1fr)' }}>
+              <table className="t small">
+                <thead><tr><th>Player</th><th className="r">Score</th><th className="r">R / S / D / M</th><th className="r">P&amp;L</th><th className="r">Max DD</th><th className="r">Trades</th><th className="r">Hit rate</th><th className="r">Avg reaction</th><th className="r">Breaches caused</th></tr></thead>
+                <tbody>
+                  {players.players.map((p) => {
+                    const me = p.participantId === session.participant_id;
+                    return (
+                      <tr key={p.participantId ?? 'team'} style={me ? { background: '#17202e' } : undefined}>
+                        <td>{p.participantId ? <b>{pnames[p.participantId] ?? 'Player'}{me ? ' (you)' : ''}</b> : <span className="dim">Team: opening allocation</span>}</td>
+                        <td className="r num" style={{ color: 'var(--accent)', fontWeight: 700 }}>{p.participantId ? p.score.composite.toFixed(1) : ''}</td>
+                        <td className="r num dim">{p.participantId ? [p.score.return, p.score.sortino, p.score.drawdown, p.score.mandate].map((x) => x.toFixed(0)).join(' / ') : ''}</td>
+                        <td className={`r num ${cls(p.pnl)}`}>{fmtCompact(p.pnl)}</td>
+                        <td className="r num">{fmtPct(-p.maxDD, 1)}</td>
+                        <td className="r num">{p.fills}</td>
+                        <td className="r num">{p.hitRate !== null ? `${(p.hitRate * 100).toFixed(0)}%` : '-'}</td>
+                        <td className="r num">{p.avgReactionSeconds !== null ? `${p.avgReactionSeconds.toFixed(1)}s` : '-'}</td>
+                        <td className={`r num ${p.breachesCaused ? 'down' : ''}`}>{p.participantId ? `${p.breachesCaused}${p.penalisedTicks ? ` (${p.penalisedTicks}t)` : ''}` : ''}</td>
+                      </tr>
+                    );
+                  })}
+                  <tr><td className="dim">Financing, carry &amp; fees</td><td colSpan={2}></td><td className={`r num ${cls(players.financing)}`}>{fmtCompact(players.financing)}</td><td colSpan={5}></td></tr>
+                  <tr><td><b>Team total</b></td><td className="r num" style={{ color: 'var(--accent)', fontWeight: 700 }}>{f.score.composite.toFixed(1)}</td><td></td><td className={`r num ${cls(players.teamPnl)}`}><b>{fmtCompact(players.teamPnl)}</b></td><td className="r num">{fmtPct(-f.maxDD, 1)}</td><td colSpan={4}></td></tr>
+                </tbody>
+              </table>
+              <LineChart lines={playerLines} height={200} fmt={fmtNav} xLabel={xLabel} />
+            </div>
+            <p className="small dim" style={{ marginBottom: 0 }}>A player&apos;s P&amp;L is what their own fills earned, marked to market every tick. If one player closes the other&apos;s position, each keeps the P&amp;L of their own trade. Mandate breaches are charged to whoever&apos;s trade triggered them; breaches from market drift are charged to nobody.</p>
+          </div>
+        )}
 
         <div className="card">
           <h2>AI coach</h2>

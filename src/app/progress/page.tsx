@@ -19,16 +19,20 @@ export default function Progress() {
   const chron = useMemo(() => [...scores].reverse(), [scores]);
   const lines = useMemo(() => {
     if (!chron.length) return [];
-    const comp = chron.map((s) => Number(s.composite));
+    // "My score" = my own trades in team sessions, the session score when solo.
+    const comp = chron.map((s) => Number(s.team_mode && s.player_composite != null ? s.player_composite : s.composite));
     const ma = comp.map((_, i) => { const w = comp.slice(Math.max(0, i - 4), i + 1); return w.reduce((a, b) => a + b, 0) / w.length; });
-    return [{ label: 'Score', color: '#5cc4ff', data: comp, step: 1 }, { label: '5-session avg', color: '#f0b90b', data: ma, step: 1, dashed: true }];
+    const lines = [{ label: 'My score', color: '#5cc4ff', data: comp, step: 1 }, { label: '5-session avg', color: '#f0b90b', data: ma, step: 1, dashed: true }];
+    if (chron.some((s) => s.team_mode)) lines.push({ label: 'Session score', color: '#7a889c', data: chron.map((s) => Number(s.composite)), step: 1, dashed: true });
+    return lines;
   }, [chron]);
   const fmt1 = useMemo(() => (v: number) => v.toFixed(0), []);
   const xl = useMemo(() => (t: number) => `#${t + 1}`, []);
 
   const cat = useMemo(() => {
     const agg: Record<string, { events: number; reacted: number; hits: number; misses: number; rt: number[] }> = {};
-    for (const d of debriefs) for (const [k, v] of Object.entries(d.report?.byCategory ?? {})) {
+    // Team sessions use my individual report (my own trades), so weak spots are mine, not my team-mate's.
+    for (const d of debriefs) for (const [k, v] of Object.entries((d.player_report ?? d.report)?.byCategory ?? {})) {
       const a = (agg[k] ??= { events: 0, reacted: 0, hits: 0, misses: 0, rt: [] });
       a.events += v.events; a.reacted += v.reacted; a.hits += v.hits; a.misses += v.misses;
       if (v.avgReactionSeconds !== null) a.rt.push(v.avgReactionSeconds);
@@ -38,13 +42,16 @@ export default function Progress() {
   }, [debriefs]);
   const byClass = useMemo(() => {
     const agg: Record<string, { pnl: number; trades: number }> = {};
-    for (const d of debriefs) for (const [k, v] of Object.entries(d.report?.byClass ?? {})) { const a = (agg[k] ??= { pnl: 0, trades: 0 }); a.pnl += v.pnl; a.trades += v.trades; }
+    for (const d of debriefs) for (const [k, v] of Object.entries((d.player_report ?? d.report)?.byClass ?? {})) { const a = (agg[k] ??= { pnl: 0, trades: 0 }); a.pnl += v.pnl; a.trades += v.trades; }
     return Object.entries(agg).sort((a, b) => a[1].pnl - b[1].pnl);
   }, [debriefs]);
   const byDiff = ['easy', 'medium', 'hard'].map((d) => {
     const s = scores.filter((x) => x.difficulty === d);
     const avg = (f: (x: ScoreRow) => number) => (s.length ? s.reduce((a, x) => a + f(x), 0) / s.length : null);
-    return { d, n: s.length, comp: avg((x) => Number(x.composite)), r: avg((x) => Number(x.return_score)), so: avg((x) => Number(x.sortino_score)), dd: avg((x) => Number(x.drawdown_score)), m: avg((x) => Number(x.mandate_score)) };
+    const ind = (x: ScoreRow) => !!x.team_mode && x.player_composite != null;
+    const pick = (x: ScoreRow, p: keyof ScoreRow, t: keyof ScoreRow) => Number(ind(x) ? x[p] : x[t]);
+    return { d, n: s.length, comp: avg((x) => pick(x, 'player_composite', 'composite')), r: avg((x) => pick(x, 'player_return_score', 'return_score')),
+      so: avg((x) => pick(x, 'player_sortino_score', 'sortino_score')), dd: avg((x) => pick(x, 'player_drawdown_score', 'drawdown_score')), m: avg((x) => pick(x, 'player_mandate_score', 'mandate_score')) };
   });
   const weakest = byDiff.filter((x) => x.n).flatMap((x) => [['Return', x.r], ['Sortino', x.so], ['Drawdown', x.dd], ['Mandate', x.m]] as const).reduce<Record<string, number[]>>((acc, [k, v]) => { (acc[k] ??= []).push(v ?? 0); return acc; }, {});
   const weakComp = Object.entries(weakest).map(([k, v]) => [k, v.reduce((a, b) => a + b, 0) / v.length] as const).sort((a, b) => a[1] - b[1])[0];
@@ -75,7 +82,7 @@ export default function Progress() {
               <table className="t small"><tbody>{byClass.map(([k, v]) => <tr key={k}><td>{CLASS_LABEL[k as keyof typeof CLASS_LABEL]}</td><td className="r num">{v.trades} trades</td><td className={`r num ${cls(v.pnl)}`}>{fmtCompact(v.pnl)}</td></tr>)}</tbody></table>
             </div>
             <div className="card">
-              <h2>By difficulty (avg)</h2>
+              <h2>By difficulty (avg, my own trades in team sessions)</h2>
               <table className="t small">
                 <thead><tr><th>Level</th><th className="r">n</th><th className="r">Score</th><th className="r">R</th><th className="r">S</th><th className="r">D</th><th className="r">M</th></tr></thead>
                 <tbody>{byDiff.map((x) => <tr key={x.d}><td><span className={`tag ${x.d}`}>{x.d}</span></td><td className="r num">{x.n}</td>

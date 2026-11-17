@@ -101,6 +101,8 @@ export interface Order extends OrderInput {
 }
 export interface Fill {
   id: string; orderId: string; tick: number; assetId: string; side: Side; qty: number; price: number; fee: number; realizedPnl: number; source: OrderSource;
+  /** Team mode: who placed the order. */
+  participantId?: string;
 }
 /** Deterministic input log: replaying it over the same path reproduces the session exactly. */
 export type LogEntry = { tick: number; kind: 'place'; input: OrderInput } | { tick: number; kind: 'cancel'; orderId: string } | { tick: number; kind: 'end' };

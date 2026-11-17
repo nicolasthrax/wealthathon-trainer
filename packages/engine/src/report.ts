@@ -36,10 +36,11 @@ export function eventImpact(runner: SessionRunner, eventId: string): Record<stri
   return out;
 }
 
-export function buildReport(runner: SessionRunner, secondsPerTick: number): Report {
+/** `participantId` limits the trade-based stats (reaction, hit rate, best/worst, turnover) to one player's own trades. */
+export function buildReport(runner: SessionRunner, secondsPerTick: number, participantId?: string): Report {
   const { rules, path, N } = runner;
   const d = rules.debrief;
-  const userFills = runner.fills.filter((f) => f.source === 'user');
+  const userFills = runner.fills.filter((f) => f.source === 'user' && (participantId === undefined || f.participantId === participantId));
   const events = [...runner.scenario.events].sort((a, b) => path.eventTicks[a.id] - path.eventTicks[b.id]);
   const impacts = events.map((e) => eventImpact(runner, e.id));
 
@@ -73,7 +74,7 @@ export function buildReport(runner: SessionRunner, secondsPerTick: number): Repo
   // FIFO round trips.
   const trades: TradeReport[] = [];
   const lots: Record<string, { qty: number; price: number; tick: number }[]> = {};
-  for (const f of runner.fills) {
+  for (const f of participantId === undefined ? runner.fills : userFills) {
     const q = (lots[f.assetId] ??= []);
     let rem = f.side === 'buy' ? f.qty : -f.qty;
     while (rem !== 0 && q.length && Math.sign(q[0].qty) !== Math.sign(rem)) {

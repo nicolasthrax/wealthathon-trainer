@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { EVENT_RULES, applyOverrides, type EventRules, type RuleOverrides } from '@config/event-rules';
 import type { Client, Difficulty, Fill, LogEntry, Order, Scenario, Snapshot, ScoreBreakdown } from '@engine/types';
 import type { OptimalResult, Report } from '@engine/report';
+import type { PlayerStats } from '@engine/players';
 import { SEED_CLIENTS } from '@seed/clients';
 
 const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL, KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -22,8 +23,11 @@ export interface ScoreRow {
   session_id: string; scenario_id: string; scenario_title: string; client_name: string | null; difficulty: Difficulty; mode: 'synthetic' | 'historical';
   composite: number; return_score: number; sortino_score: number; drawdown_score: number; mandate_score: number;
   ret: number; sortino: number; max_dd: number; final_equity: number; created_at: string; team_mode?: boolean;
+  /** Team sessions: this player's own trades (attributed by fill). Null for solo sessions. */
+  player_composite?: number | null; player_return_score?: number | null; player_sortino_score?: number | null; player_drawdown_score?: number | null;
+  player_mandate_score?: number | null; player_pnl?: number | null; player_trades?: number | null; player_hit_rate?: number | null; player_avg_reaction?: number | null;
 }
-export interface DebriefRow { session_id: string; report: Report | null; optimal: OptimalResult | null; coach: CoachResult | null; coach_job_id: string | null }
+export interface DebriefRow { session_id: string; report: Report | null; optimal: OptimalResult | null; coach: CoachResult | null; coach_job_id: string | null; player_report?: Report | null }
 export interface JobRow { id: string; type: string; status: 'queued' | 'running' | 'done' | 'failed'; result: unknown; error: string | null; created_at: string }
 export interface CoachResult {
   summary: string;
@@ -50,7 +54,7 @@ export interface Store {
   updateSession(id: string, patch: Partial<Pick<SessionRow, 'status' | 'input_log'>> & { started_at?: string; finished_at?: string }): Promise<void>;
   saveTrades(s: SessionRow, orders: Order[], fills: Fill[]): Promise<void>;
   saveSnapshots(s: SessionRow, snaps: Snapshot[]): Promise<void>;
-  saveScore(s: SessionRow, score: ScoreBreakdown, m: { ret: number; sortino: number; maxDD: number; equity: number }): Promise<void>;
+  saveScore(s: SessionRow, score: ScoreBreakdown, m: { ret: number; sortino: number; maxDD: number; equity: number }, player?: PlayerStats): Promise<void>;
   listScores(): Promise<ScoreRow[]>;
   getDebrief(sessionId: string): Promise<DebriefRow | null>;
   saveDebrief(sessionId: string, patch: Partial<Omit<DebriefRow, 'session_id'>>): Promise<void>;
@@ -68,6 +72,12 @@ export interface Store {
   updatePitch(id: string, patch: Partial<Omit<PitchRow, 'id'>>): Promise<void>;
   uploadAudio(pitchId: string, name: string, blob: Blob): Promise<string>;
 }
+
+const playerCols = (p?: PlayerStats) => p ? {
+  player_composite: p.score.composite, player_return_score: p.score.return, player_sortino_score: p.score.sortino, player_drawdown_score: p.score.drawdown,
+  player_mandate_score: p.score.mandate, player_pnl: p.pnl, player_trades: p.fills, player_hit_rate: p.hitRate, player_avg_reaction: p.avgReactionSeconds,
+  player_stats: { ...p, curve: undefined },
+} : {};
 
 // ── Local (guest) store: everything in this browser, no AI features ──────────
 const ls = {
@@ -202,15 +212,15 @@ function cloudStore(db: SupabaseClient, user: User): Store {
     async saveSnapshots(s, snaps) {
       if (snaps.length) ok(await db.from('snapshots').upsert(snaps.map((x) => ({ session_id: s.id, participant_id: s.participant_id, tick: x.tick, equity: x.equity, cash: x.cash, positions: x.positions, score: x.score })), { onConflict: 'session_id,tick' }).select('id'));
     },
-    async saveScore(s, sc, m) {
+    async saveScore(s, sc, m, player) {
       ok(await db.from('scores').upsert({ session_id: s.id, participant_id: s.participant_id, scenario_id: s.scenario_id, scenario_title: s.scenario_title, client_name: s.client.name, difficulty: s.difficulty, mode: s.mode,
-        composite: sc.composite, return_score: sc.return, sortino_score: sc.sortino, drawdown_score: sc.drawdown, mandate_score: sc.mandate, ret: m.ret, sortino: m.sortino, max_dd: m.maxDD, final_equity: m.equity, team_mode: !!s.team_mode },
+        composite: sc.composite, return_score: sc.return, sortino_score: sc.sortino, drawdown_score: sc.drawdown, mandate_score: sc.mandate, ret: m.ret, sortino: m.sortino, max_dd: m.maxDD, final_equity: m.equity, team_mode: !!s.team_mode, ...playerCols(player) },
         { onConflict: 'session_id,user_id' }).select('id'));
     },
     async listScores() { return ok(await db.from('scores').select('*').order('created_at', { ascending: false }).limit(500)) as ScoreRow[]; },
-    async getDebrief(id) { return (await db.from('debriefs').select('session_id,report,optimal,coach,coach_job_id').eq('session_id', id).eq('user_id', user.id).maybeSingle()).data as DebriefRow | null; },
+    async getDebrief(id) { return (await db.from('debriefs').select('session_id,report,optimal,coach,coach_job_id,player_report').eq('session_id', id).eq('user_id', user.id).maybeSingle()).data as DebriefRow | null; },
     async saveDebrief(id, patch) { ok(await db.from('debriefs').upsert({ session_id: id, user_id: user.id, ...patch, updated_at: new Date().toISOString() }, { onConflict: 'session_id,user_id' }).select('session_id')); },
-    async listDebriefs() { return ok(await db.from('debriefs').select('session_id,report,coach,coach_job_id').eq('user_id', user.id).order('created_at', { ascending: false }).limit(200)) as DebriefRow[]; },
+    async listDebriefs() { return ok(await db.from('debriefs').select('session_id,report,coach,coach_job_id,player_report').eq('user_id', user.id).order('created_at', { ascending: false }).limit(200)) as DebriefRow[]; },
     async listProfiles() { return ok(await db.from('profiles').select('id,display_name')) as Profile[]; },
     async listTeamSessions() {
       const since = new Date(Date.now() - 12 * 3600_000).toISOString();

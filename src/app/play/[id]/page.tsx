@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { SessionRunner, ordersFromWeights, replaySession } from '@engine/runner';
 import { buildReport } from '@engine/report';
+import { buildPlayerStats } from '@engine/players';
 import type { Scenario } from '@engine/types';
 import { currentRules, useStore, type SessionRow } from '@/lib/store';
 import { Briefing } from '@/components/Briefing';
@@ -138,9 +139,13 @@ export default function Play({ params }: { params: Promise<{ id: string }> }) {
     try {
       const report = buildReport(r, secondsPerTick);
       const m = r.metrics;
+      // Team mode: also log this player's individual stats (their own trades, attributed by fill).
+      const pids = (s.participants ?? []).map((p) => p.id);
+      const player = s.team_mode && s.participant_id ? buildPlayerStats(r, secondsPerTick, pids).players.find((p) => p.participantId === s.participant_id) : undefined;
+      const playerReport = s.team_mode && s.participant_id ? buildReport(r, secondsPerTick, s.participant_id) : null;
       await store.updateSession(id, { status: 'finished', input_log: r.log, finished_at: new Date().toISOString() });
-      await store.saveScore(s, m.score, { ret: m.ret, sortino: m.sortino, maxDD: m.maxDD, equity: m.equity });
-      await store.saveDebrief(id, { report });
+      await store.saveScore(s, m.score, { ret: m.ret, sortino: m.sortino, maxDD: m.maxDD, equity: m.equity }, player);
+      await store.saveDebrief(id, { report, ...(playerReport ? { player_report: playerReport } : {}) });
       // In team mode both screens hold identical state; only the session owner uploads the shared trade log.
       if (isOwner) await Promise.all([store.saveTrades(s, r.orders, r.fills), store.saveSnapshots(s, r.snapshots)]).catch((e) => console.warn('trade log upload failed', e));
       try { localStorage.removeItem(progressKey(id)); } catch { /* ignore */ }

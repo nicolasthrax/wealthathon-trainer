@@ -185,7 +185,7 @@ export class SessionRunner {
     if (q1 === 0) delete this.pos[order.assetId]; else this.pos[order.assetId] = p;
     this.cash -= dq * px + fee;
     order.status = 'filled';
-    this.fills.push({ id: `f${++this.fillSeq}`, orderId: order.id, tick: this.tick, assetId: order.assetId, side: order.side, qty: order.qty, price: px, fee, realizedPnl: realized - fee, source: order.source });
+    this.fills.push({ id: `f${++this.fillSeq}`, orderId: order.id, tick: this.tick, assetId: order.assetId, side: order.side, qty: order.qty, price: px, fee, realizedPnl: realized - fee, source: order.source, ...(order.participantId ? { participantId: order.participantId } : {}) });
   }
 
   // ── Clock ────────────────────────────────────────────────────────────────

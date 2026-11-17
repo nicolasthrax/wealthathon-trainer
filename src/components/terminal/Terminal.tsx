@@ -3,6 +3,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { SessionRunner } from '@engine/runner';
 import type { Order, OrderInput, Side, OrderType } from '@engine/types';
 import { tickLabel } from '@engine/path';
+import { liveContribution } from '@engine/players';
 import { Blotter, NewsFeed, PriceChart, RiskPanel, Watchlist } from './panels';
 import { cls, fmtClock, fmtCompact, fmtMoney, fmtPct, fmtPx } from '@/lib/format';
 
@@ -188,11 +189,19 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
         <div className="stat score" title={`Return ${m.score.return.toFixed(0)} · Sortino ${m.score.sortino.toFixed(0)} · Drawdown ${m.score.drawdown.toFixed(0)} · Mandate ${m.score.mandate.toFixed(0)}`}>
           <span>Score</span><b>{m.score.composite.toFixed(1)}</b>
         </div>
-        <span className="small dim" style={{ fontSize: 10 }}>R {m.score.return.toFixed(0)} · S {m.score.sortino.toFixed(0)} · D {m.score.drawdown.toFixed(0)} · M {m.score.mandate.toFixed(0)}</span>
+        {!team && <span className="small dim" style={{ fontSize: 10 }}>R {m.score.return.toFixed(0)} · S {m.score.sortino.toFixed(0)} · D {m.score.drawdown.toFixed(0)} · M {m.score.mandate.toFixed(0)}</span>}
         {m.mandate.some((c) => !c.ok) && <span className="banner" style={{ background: '#3d2f0c', color: 'var(--amber)' }}>MANDATE BREACH</span>}
         {m.marginCall && <span className="banner">MARGIN CALL</span>}
         <span style={{ flex: 1 }} />
         {pauseAllowed && <button onClick={() => setPaused((p) => !p)}>{paused ? '▶ Resume' : '❚❚ Pause'}</button>}
+        {team && (() => {
+          const c = liveContribution(runner);
+          const parts = Object.entries(team.names).map(([pid, n]) => [n, c[pid] ?? 0] as const);
+          return <span className="small team" title="Each player's P&L from their own trades (opening allocation counted as team)">
+            {parts.map(([n, v]) => <span key={n}>{n} <b className={`num ${cls(v)}`}>{fmtCompact(v)}</b></span>)}
+            <span className="dim">Team open <b className={`num ${cls(c.team ?? 0)}`}>{fmtCompact(c.team ?? 0)}</b></span>
+          </span>;
+        })()}
         {team && team.peers.map((p) => (
           <span key={p.name} className="small" title={p.role.replace('_', ' ')}><span className="dot on" />{p.name}{p.selected ? <span className="dim"> · {runner.assetById[p.selected]?.ticker}</span> : null}</span>
         ))}

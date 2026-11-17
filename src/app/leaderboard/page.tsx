@@ -5,7 +5,9 @@ import { Nav } from '@/components/Nav';
 import { useStore, type ScoreRow } from '@/lib/store';
 import { fmtMoney, fmtPct } from '@/lib/format';
 
-type SortKey = 'composite' | 'ret' | 'sortino' | 'max_dd' | 'created_at';
+type SortKey = 'composite' | 'mine' | 'ret' | 'sortino' | 'max_dd' | 'created_at';
+/** My individual score: own trades in team sessions, the session score when solo. */
+const mine = (r: ScoreRow) => Number(r.team_mode && r.player_composite != null ? r.player_composite : r.composite);
 
 /** Personal leaderboard. Rows come from `scores`, which already carries team_id for a future team/global board. */
 export default function Leaderboard() {
@@ -15,8 +17,8 @@ export default function Leaderboard() {
   const [mode, setMode] = useState('all');
   const [sort, setSort] = useState<SortKey>('composite');
   useEffect(() => { if (ready) store.listScores().then(setRows).catch(() => {}); }, [store, ready]);
-  const view = useMemo(() => rows.filter((r) => (diff === 'all' || r.difficulty === diff) && (mode === 'all' || r.mode === mode))
-    .sort((a, b) => sort === 'created_at' ? b.created_at.localeCompare(a.created_at) : sort === 'max_dd' ? a.max_dd - b.max_dd : (b[sort] as number) - (a[sort] as number)), [rows, diff, mode, sort]);
+  const view = useMemo(() => rows.filter((r) => (diff === 'all' || r.difficulty === diff) && (mode === 'all' || r.mode === mode || (mode === 'team' && r.team_mode) || (mode === 'solo' && !r.team_mode)))
+    .sort((a, b) => sort === 'created_at' ? b.created_at.localeCompare(a.created_at) : sort === 'max_dd' ? a.max_dd - b.max_dd : sort === 'mine' ? mine(b) - mine(a) : (b[sort] as number) - (a[sort] as number)), [rows, diff, mode, sort]);
   const th = (k: SortKey, label: string) => <th className="r" style={{ cursor: 'pointer', color: sort === k ? 'var(--accent)' : undefined }} onClick={() => setSort(k)}>{label}</th>;
   return (
     <>
@@ -26,12 +28,12 @@ export default function Leaderboard() {
           <h1>Leaderboard</h1>
           <div className="row">
             <span className="seg">{['all', 'easy', 'medium', 'hard'].map((d) => <button key={d} className={diff === d ? 'on' : ''} onClick={() => setDiff(d)}>{d}</button>)}</span>
-            <span className="seg">{['all', 'synthetic', 'historical'].map((m) => <button key={m} className={mode === m ? 'on' : ''} onClick={() => setMode(m)}>{m}</button>)}</span>
+            <span className="seg">{['all', 'synthetic', 'historical', 'team', 'solo'].map((m) => <button key={m} className={mode === m ? 'on' : ''} onClick={() => setMode(m)}>{m}</button>)}</span>
           </div>
         </div>
         <div className="card">
           <table className="t">
-            <thead><tr><th>#</th><th>Scenario</th><th>Client</th><th>Level</th>{th('composite', 'Score')}<th className="r">R / S / D / M</th>{th('ret', 'Return')}{th('sortino', 'Sortino')}{th('max_dd', 'Max DD')}<th className="r">Final NAV</th>{th('created_at', 'Date')}</tr></thead>
+            <thead><tr><th>#</th><th>Scenario</th><th>Client</th><th>Level</th>{th('composite', 'Session score')}{th('mine', 'My score')}<th className="r">R / S / D / M</th>{th('ret', 'Return')}{th('sortino', 'Sortino')}{th('max_dd', 'Max DD')}<th className="r">Final NAV</th>{th('created_at', 'Date')}</tr></thead>
             <tbody>
               {view.map((r, i) => (
                 <tr key={r.session_id}>
@@ -40,6 +42,7 @@ export default function Leaderboard() {
                   <td className="small">{r.client_name}</td>
                   <td><span className={`tag ${r.difficulty}`}>{r.difficulty}</span></td>
                   <td className="r num" style={{ color: 'var(--accent)', fontWeight: 700 }}>{Number(r.composite).toFixed(1)}</td>
+                  <td className="r num" title={r.team_mode ? `My trades: P&L ${Math.round(Number(r.player_pnl ?? 0)).toLocaleString()}, ${r.player_trades ?? 0} trades${r.player_hit_rate != null ? `, hit rate ${(Number(r.player_hit_rate) * 100).toFixed(0)}%` : ''}` : 'Solo: same as the session score'}>{mine(r).toFixed(1)}</td>
                   <td className="r num small dim">{[r.return_score, r.sortino_score, r.drawdown_score, r.mandate_score].map((x) => Number(x).toFixed(0)).join(' / ')}</td>
                   <td className={`r num ${r.ret >= 0 ? 'up' : 'down'}`}>{fmtPct(Number(r.ret), 1)}</td>
                   <td className="r num">{Number(r.sortino).toFixed(2)}</td>
@@ -48,7 +51,7 @@ export default function Leaderboard() {
                   <td className="r small dim">{new Date(r.created_at).toLocaleDateString()}</td>
                 </tr>
               ))}
-              {!view.length && <tr><td colSpan={11} className="dim">No sessions yet.</td></tr>}
+              {!view.length && <tr><td colSpan={12} className="dim">No sessions yet.</td></tr>}
             </tbody>
           </table>
         </div>

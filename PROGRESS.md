@@ -24,6 +24,7 @@ Build log for the BOCHK x HKU Wealthathon practice app. Newest entries are at th
 | 9 | Deploy + README | ✅ Done |
 | + | Team mode (2 players) | ✅ Done and tested with two browsers |
 | + | Private accounts (Nicolas, AG) | ✅ Done |
+| + | Individual scores inside team sessions | ✅ Done and tested with two browsers |
 
 ---
 
@@ -89,6 +90,18 @@ Build log for the BOCHK x HKU Wealthathon practice app. Newest entries are at th
 - **Sign-in:** pick your name (Nicolas or AG) and type a password, with no email to type. Accounts use internal `@wealthathon.invalid` addresses that never receive mail.
 - **Passwords:** each player can change theirs in Settings. Set to short passwords chosen by Nicolas, on request.
 
+### 11. Individual scores in team sessions
+- **Attribution by trade:** each fill belongs to whoever placed it. A player's P&L is what their own fills earned, marked to market every tick. The opening allocation (a joint decision) and forced liquidations go to a "Team" bucket.
+- **Checks out:** player buckets + team bucket + financing add up exactly to the team P&L (unit-tested).
+- **Same formula as the team:** each player gets a composite score (return, Sortino, drawdown, mandate) computed on their own contribution path. A mandate breach is charged to the player whose trade triggered it; breaches caused by market drift are charged to nobody.
+- **Logged per player:** each player's score row stores their individual composite, the four components, P&L, trade count, hit rate and average reaction time. Their debrief stores an individual report.
+- **Shown everywhere:**
+  - Trading screen: a live per-player P&L in the top bar.
+  - Debrief: an "Individual scores" table and contribution chart.
+  - Leaderboard: a "My score" column and a team/solo filter.
+  - Progress: the trend, weak spots and by-difficulty view all use your own trades.
+  - Coach: critiques the requesting player on their own trades.
+
 ---
 
 ## Fixes and corrections (found during testing)
@@ -109,12 +122,14 @@ Build log for the BOCHK x HKU Wealthathon practice app. Newest entries are at th
 | 12 | Team mode: two players saving the same trade rows would clash under RLS | Only the session owner uploads the shared trade log; each player saves their own score |
 | 13 | Team mode: one debrief row per session couldn't hold a coach critique for each player | Changed the debrief key to (session, user) |
 | 14 | Team mode: the price chart would flicker when the engine rebuilt | The chart is now keyed on the scenario, not the engine instance |
+| 15 | An idle player's P&L showed as `-0` | Normalised to 0 |
+| 16 | The extra per-player figures pushed the top bar wider than a 13" screen, cutting off the right column | The top bar now clips instead of widening the page; the score-component text is hidden in team mode (still in the tooltip) |
 
 ---
 
 ## Verification results
 
-- **Unit tests:** 32 passing. They cover determinism and replay, factor coherence, the peg band, orders, margin and liquidation, financing, all mandate types, scoring maths, config overrides, the validator, procedural scenarios, the report, the optimal path, two-player convergence with late and out-of-order inputs, and the JSON parser.
+- **Unit tests:** 35 passing. They cover determinism and replay, factor coherence, the peg band, orders, margin and liquidation, financing, all mandate types, scoring maths, config overrides, the validator, procedural scenarios, the report, the optimal path, two-player convergence with late and out-of-order inputs, individual attribution (buckets sum to the team P&L, breach charged to the right player, idle player neutral), and the JSON parser.
 - **Typecheck:** clean. **Production build:** clean.
 - **Browser runs (Playwright):**
   - **Solo session:** briefing, hotkey trading, scoring and debrief, with no console errors.
