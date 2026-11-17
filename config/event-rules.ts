@@ -247,6 +247,8 @@ export const EVENT_RULES = {
   pool: {
     /** Worker keeps at least this many validated synthetic scenarios per pool. */
     minSize: 15,
+    /** Worker keeps at least this many client briefs (10 hand-written seeds + AI-generated). */
+    minClients: 30,
     /** Target share of the pool per difficulty. */
     mix: { easy: 0.25, medium: 0.45, hard: 0.3 } as Record<Difficulty, number>,
     workerHeartbeatSeconds: 30,

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Runs the Wealthathon AI worker in the background on login and restarts it if it stops.
+  1. Replace /Users/YOU/wealthathon-trainer with your checkout path (3 places) and check the PATH line
+     includes the folders of `node`, `npm` and `claude` (run: dirname "$(which node)"; dirname "$(which claude)").
+  2. cp worker/com.wealthathon.worker.plist ~/Library/LaunchAgents/
+  3. launchctl load -w ~/Library/LaunchAgents/com.wealthathon.worker.plist
+  Logs: worker/logs/worker.log   Stop: launchctl unload ~/Library/LaunchAgents/com.wealthathon.worker.plist
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.wealthathon.worker</string>
+  <key>WorkingDirectory</key><string>/Users/YOU/wealthathon-trainer</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string><string>-lc</string><string>mkdir -p worker/logs &amp;&amp; exec npm run worker</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/Users/YOU/.local/bin</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>StandardOutPath</key><string>/Users/YOU/wealthathon-trainer/worker/logs/worker.log</string>
+  <key>StandardErrorPath</key><string>/Users/YOU/wealthathon-trainer/worker/logs/worker.log</string>
+</dict>
+</plist>

@@ -11,7 +11,8 @@ import { LineChart } from '@/components/LineChart';
 import { ClientCard } from '@/components/Briefing';
 import { headlineOf } from '@/components/terminal/panels';
 import { useJob, useStore, type CoachResult, type DebriefRow, type SessionRow } from '@/lib/store';
-import { CAT_LABEL, cls, fmtCompact, fmtMoney, fmtPct, SRC_LABEL } from '@/lib/format';
+import { cls, fmtCompact, fmtMoney, fmtPct, SRC_LABEL } from '@/lib/format';
+import { sessionContext as coachPayload } from '@/lib/context';
 
 export default function Debrief({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -249,21 +250,3 @@ function CoachView({ c }: { c: CoachResult }) {
   );
 }
 
-/** Compact, self-contained context for the coach job (the worker needs no DB reads). */
-function coachPayload(r: SessionRunner, rep: Report, opt: OptimalResult | null, s: SessionRow) {
-  const tk = (id: string) => r.assetById[id]?.ticker ?? id;
-  return {
-    sessionId: s.id,
-    scenario: { title: r.scenario.title, storyline: r.scenario.storyline, regime: r.scenario.regime.name, difficulty: s.difficulty, mode: s.mode },
-    client: r.client,
-    rules: { startingCapital: s.rules.startingCapital, weights: s.rules.scoring.weights, costs: s.rules.costs.enabled, breachGraceTicks: s.rules.mandate.breachGraceTicks, ticksPerYear: r.N },
-    secondsPerTick: (s.session_minutes * 60) / r.N,
-    final: rep.final,
-    events: rep.events.map((e) => ({ tick: e.tick, headline: r.scenario.events.find((x) => x.id === e.eventId)!.headline, source: e.source, category: e.category, kind: e.kind,
-      expected: e.topImpacts.slice(0, 4).map((t) => `${tk(t.assetId)} ${(t.impact * 100).toFixed(1)}%`), reactionSeconds: e.reactionSeconds, firstTrade: e.firstTrade && `${e.firstTrade.side} ${tk(e.firstTrade.assetId)}`, hits: e.hits, misses: e.misses })),
-    fills: r.fills.slice(0, 250).map((f) => ({ tick: f.tick, asset: tk(f.assetId), side: f.side, qty: f.qty, price: +f.price.toPrecision(6), source: f.source })),
-    summary: { avgReactionSeconds: rep.avgReactionSeconds, hitRate: rep.hitRate, trades: rep.tradeCount, turnover: rep.turnover, breaches: rep.breaches, byClass: rep.byClass,
-      best: rep.best.map((t) => `${t.dir} ${tk(t.assetId)} ${Math.round(t.pnl)}`), worst: rep.worst.map((t) => `${t.dir} ${tk(t.assetId)} ${Math.round(t.pnl)}`) },
-    optimal: opt && { finalReturn: opt.finalReturn, missed: opt.missed.map((m) => ({ headline: m.headline, optReturn: m.optReturn, myReturn: m.myReturn, weights: Object.fromEntries(Object.entries(m.weights).map(([k, v]) => [tk(k), v])) })) },
-  };
-}

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { SessionRunner, ordersFromWeights, replaySession } from '@engine/runner';
 import { buildReport } from '@engine/report';
 import type { Scenario } from '@engine/types';
-import { useStore, type SessionRow } from '@/lib/store';
+import { currentRules, useStore, type SessionRow } from '@/lib/store';
 import { Briefing } from '@/components/Briefing';
 import { Terminal } from '@/components/terminal/Terminal';
 
@@ -28,6 +28,16 @@ export default function Play({ params }: { params: Promise<{ id: string }> }) {
     let stop = false;
     (async () => {
       try {
+        if (id === 'demo') {
+          // Instant practice: a Medium session with a random client, straight onto the trading screen.
+          const [list, clients, rules] = await Promise.all([store.listScenarios(), store.listClients(), currentRules(store)]);
+          const pool = list.filter((x) => x.source === 'synthetic' && x.difficulty === 'medium');
+          const meta = pool[Math.floor(Math.random() * pool.length)];
+          const row = await store.createSession({ scenario: meta, client: clients[Math.floor(Math.random() * clients.length)], seed: Math.random().toString(36).slice(2, 10),
+            difficulty: 'medium', disguise: false, session_minutes: rules.difficulty.medium.sessionMinutes, rules });
+          router.replace(`/play/${row.id}${window.location.search}`);
+          return;
+        }
         const s = await store.getSession(id);
         if (!s) throw new Error('Session not found (are you signed in on the same account?)');
         if (s.status === 'finished') { router.replace(`/debrief/${id}`); return; }
@@ -43,7 +53,9 @@ export default function Play({ params }: { params: Promise<{ id: string }> }) {
           setPhase('live');
         } else {
           runnerRef.current = new SessionRunner(opts);
-          setPhase(s.status === 'active' ? 'live' : 'briefing');
+          const auto = new URLSearchParams(window.location.search).has('autostart');
+          if (auto && s.status === 'briefing') void store.updateSession(id, { status: 'active', started_at: new Date().toISOString() });
+          setPhase(s.status === 'active' || auto ? 'live' : 'briefing');
         }
         setSession(s); setScenario(sc);
       } catch (e) { setErr((e as Error).message); setPhase('error'); }

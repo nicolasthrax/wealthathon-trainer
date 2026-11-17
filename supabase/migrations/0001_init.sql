@@ -311,3 +311,8 @@ create index orders_participant_idx on public.orders (participant_id);
 create index fills_participant_idx on public.fills (participant_id);
 create index snapshots_participant_idx on public.snapshots (participant_id);
 create index scores_participant_idx on public.scores (participant_id);
+
+-- Guests (not signed in) can practise from the same validated pool; content is not sensitive.
+create policy scenarios_read_anon on public.scenarios for select to anon using (validated);
+create policy clients_read_anon on public.clients for select to anon using (true);
+create policy heartbeats_read_anon on public.worker_heartbeats for select to anon using (true);

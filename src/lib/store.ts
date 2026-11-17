@@ -5,7 +5,6 @@ import { EVENT_RULES, applyOverrides, type EventRules, type RuleOverrides } from
 import type { Client, Difficulty, Fill, LogEntry, Order, Scenario, Snapshot, ScoreBreakdown } from '@engine/types';
 import type { OptimalResult, Report } from '@engine/report';
 import { SEED_CLIENTS } from '@seed/clients';
-import { seedPool } from '@seed/pool';
 
 const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL, KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 export const supabase: SupabaseClient | null = URL_ && KEY ? createClient(URL_, KEY) : null;
@@ -71,21 +70,36 @@ const ls = {
   set(k: string, v: unknown) { try { localStorage.setItem(`wt:${k}`, JSON.stringify(v)); } catch { /* quota */ } },
 };
 let poolCache: Scenario[] | null = null;
+/** Bundled offline pool, loaded only when Supabase is unreachable (keeps the main bundle and CPU light). */
+const loadSeedPool = async () => (poolCache ??= (await import('@seed/pool')).seedPool());
 const histCache = new Map<string, Scenario>();
 const AI_GUEST = 'Sign in to use AI features (coach, pitch judge). They run on your Mac worker through Supabase.';
 
 const localStore: Store = {
   kind: 'local',
   async listScenarios() {
-    poolCache ??= seedPool();
+    // Prefer the shared Supabase pool (readable by guests); fall back to bundled seeds when offline.
+    if (supabase) {
+      const { data } = await supabase.from('scenarios').select('id,title,source,difficulty,generator,used_count,disguisedTitle:json->historical->>disguisedTitle').eq('validated', true);
+      if (data?.length) {
+        const used = ls.get<Record<string, number>>('used', {});
+        return (data as unknown as ScenarioMeta[]).map((m) => ({ ...m, used_count: used[m.id] ?? 0 }));
+      }
+    }
+    await loadSeedPool();
     const hist: ScenarioMeta[] = await fetch('/seed/history/index.json').then((r) => (r.ok ? r.json() : [])).then((a: { id: string; title: string; disguisedTitle: string; difficulty: Difficulty }[]) =>
       a.map((h) => ({ id: h.id, title: h.title, source: 'historical' as const, difficulty: h.difficulty, generator: 'yahoo-finance', used_count: 0, disguisedTitle: h.disguisedTitle }))).catch(() => []);
     const used = ls.get<Record<string, number>>('used', {});
-    return [...poolCache.map((s) => ({ id: s.id, title: s.title, source: s.source, difficulty: s.difficulty, generator: s.generator ?? null, used_count: 0 })), ...hist].map((m) => ({ ...m, used_count: used[m.id] ?? 0 }));
+    return [...poolCache!.map((s) => ({ id: s.id, title: s.title, source: s.source, difficulty: s.difficulty, generator: s.generator ?? null, used_count: 0 })), ...hist].map((m) => ({ ...m, used_count: used[m.id] ?? 0 }));
   },
   async getScenario(id) {
-    poolCache ??= seedPool();
-    const s = poolCache.find((x) => x.id === id) ?? histCache.get(id);
+    const cached = histCache.get(id);
+    if (cached) return cached;
+    if (supabase) {
+      const { data } = await supabase.from('scenarios').select('json').eq('id', id).maybeSingle();
+      if (data) { histCache.set(id, data.json as Scenario); return data.json as Scenario; }
+    }
+    const s = (await loadSeedPool()).find((x) => x.id === id);
     if (s) return s;
     const res = await fetch(`/seed/history/${id}.json`);
     if (!res.ok) throw new Error(`Scenario ${id} not found`);
@@ -93,7 +107,10 @@ const localStore: Store = {
     histCache.set(id, sc);
     return sc;
   },
-  async listClients() { return SEED_CLIENTS; },
+  async listClients() {
+    const { data } = supabase ? await supabase.from('clients').select('json') : { data: null };
+    return data?.length ? (data as { json: Client }[]).map((r) => r.json) : SEED_CLIENTS;
+  },
   async createSession(n) {
     const row: SessionRow = { id: crypto.randomUUID(), scenario_id: n.scenario.id, scenario_title: n.scenario.title, client: n.client, seed: n.seed, difficulty: n.difficulty,
       mode: n.scenario.source, disguise: n.disguise, session_minutes: n.session_minutes, rules: n.rules, input_log: [], status: 'briefing', created_at: new Date().toISOString() };
@@ -122,7 +139,11 @@ const localStore: Store = {
   async listDebriefs() { return ls.get<string[]>('debriefs', []).map((id) => ls.get<DebriefRow | null>(`debrief:${id}`, null)).filter((d): d is DebriefRow => !!d); },
   async enqueueJob() { throw new Error(AI_GUEST); },
   async getJob() { return null; },
-  async workerOnline() { return false; },
+  async workerOnline() {
+    if (!supabase) return false;
+    const { data } = await supabase.from('worker_heartbeats').select('last_seen').order('last_seen', { ascending: false }).limit(1);
+    return !!data?.[0] && Date.now() - Date.parse(data[0].last_seen) < EVENT_RULES.pool.workerOfflineAfterSeconds * 1000;
+  },
   async getOverrides() { return ls.get<RuleOverrides>('overrides', {}); },
   async saveOverrides(o) { ls.set('overrides', o); },
   async createPitch() { throw new Error(AI_GUEST); },
