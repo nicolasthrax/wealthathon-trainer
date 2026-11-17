@@ -25,6 +25,8 @@ Build log for the BOCHK x HKU Wealthathon practice app. Newest entries are at th
 | + | Team mode (2 players) | ✅ Done and tested with two browsers |
 | + | Private accounts (Nicolas, AG) | ✅ Done |
 | + | Individual scores inside team sessions | ✅ Done and tested with two browsers |
+| + | Who's online + mobile layout | ✅ Done |
+| + | **Learn section** (10 guided lessons, 18 playbooks, cheat sheet, weekly plan, hint mode) | ✅ Done and tested in the browser (spec: `.plans/learn-section-spec.md`) |
 
 ---
 
@@ -118,6 +120,51 @@ Build log for the BOCHK x HKU Wealthathon practice app. Newest entries are at th
 - **Other pages:** multi-column grids stack; the nav links become a swipeable row; wide tables scroll inside their card.
 - Verified at iPhone 13 size on every page (no page scrolls sideways) and at 1440px (desktop layout unchanged).
 
+### 14. Learn section
+Built from the interview spec in `.plans/learn-section-spec.md`, for two beginners with under 3 weeks to go. A new **Learn** tab sits after Practice.
+- **10 guided lessons** (`/learn/[lesson]`), 10-15 minutes each:
+  1. How you're scored
+  2. Client brief → opening allocation
+  3. Headline → driver → asset
+  4. Rates surprise
+  5. China stimulus
+  6. Risk-off shock
+  7. Oil supply shock
+  8. Rumours & denials
+  9. Sizing
+  10. Mandate & drawdown under pressure
+- **How a lesson runs:**
+  - It starts with a short concept card in plain English. Finance terms are underlined and show a one-line glossary definition on hover or tap (44 terms).
+  - Then a scripted one-quarter market (about 4 minutes) runs in the **real trading screen**.
+  - At 2-4 key moments the **clock stops**. You trade with the normal ticket or hotkeys, write (or dictate) one line on **why**, then continue.
+  - Lessons 1-5 have no timer, lessons 6-8 give 30s and lessons 9-10 give 20s. When time runs out the clock resumes and whatever you did is graded.
+- **Process-first grading.** Each decision is checked on:
+  - direction and asset choice;
+  - size (% of NAV);
+  - mandate (no new breach, or "fixed" for breach lessons);
+  - cut / cap rules where relevant;
+  - speed (timed lessons only);
+  - whether the "why" names the driver.
+
+  The pass mark is 70%. What the trades actually earned in the next 40 ticks is shown separately ("what happened this time") with a mini chart, and never changes the grade.
+- **Retries:** the first attempt is a fixed, hand-checked market. Retries use a new seed and an alternate headline of the same type (2 alternates per decision), so you can't memorise answers. A denial always uses the same wording as its rumour.
+- **18 playbooks** (`/learn/playbooks`) give trigger → what usually moves → why → size → exit → risks.
+  - There are 11 news plays (hawkish, dovish, HIBOR spike, China stimulus/disappointment, risk-off, relief rally, credit stress, oil shock, oil slide, rumour fade) and 7 process plays.
+  - Everything is "real-world first": no tricks that only work in this simulator.
+- **Cheat sheet** (`/learn/cheatsheet`) fits on **one A4 page**. It has scoring rules of thumb, the news-playbook table and a pre-trade checklist. Its driver map is computed from the engine's factor loadings, so it can't drift from the simulator.
+- **3-week plan** (17 Nov → 8 Dec) lists the lessons plus practice sessions. Items tick themselves: lesson attempts, sessions matching the difficulty/hints/team requirement, and opening the cheat sheet.
+- **Shared progress:** the lesson list shows Nicolas's and AG's best grade side by side. Attempts are saved in the new `lesson_attempts` table (both players can read, each can only write their own).
+- **Hint mode** for normal practice is a checkbox on the Practice page. When a headline lands, a card names the matching playbook and its usual moves. It never suggests a size or an order.
+  - Hinted sessions are flagged, kept off the leaderboard, and left out of the Progress trend (shown as a separate count).
+  - Debriefs tag each headline with its playbook.
+- **AI tie-ins** (when the Mac worker is on):
+  - A new `lesson_why` job comments on each "why" answer.
+  - The session coach now gets the player's learned and struggling playbooks and is told to point to them by name.
+  - Lessons never wait for the worker.
+- **Engine code:** `packages/engine/src/learn.ts` holds the lesson scenarios, decision and allocation grading, outcomes and playbook matching.
+- **Content files:** `config/learn/{lessons,playbooks,glossary}.ts`.
+- **Database:** `supabase/migrations/0004_learn.sql` (applied).
+
 ---
 
 ## Fixes and corrections (found during testing)
@@ -140,18 +187,32 @@ Build log for the BOCHK x HKU Wealthathon practice app. Newest entries are at th
 | 14 | Team mode: the price chart would flicker when the engine rebuilt | The chart is now keyed on the scenario, not the engine instance |
 | 15 | An idle player's P&L showed as `-0` | Normalised to 0 |
 | 16 | The extra per-player figures pushed the top bar wider than a 13" screen, cutting off the right column | The top bar now clips instead of widening the page; the score-component text is hidden in team mode (still in the tooltip) |
+| 17 | Learn: the decision card sat over the price list, so you couldn't click the asset you needed to trade | Moved it over the chart (above the tab bar on phones) |
+| 18 | Learn: lesson markets were noisy enough to blur the lesson | Lesson regimes use the lowest volatility setting (0.4) |
+| 19 | Learn: typing a "why" containing b/s/f/x/l fired trading hotkeys | Hotkeys ignore text areas and the decision card |
+| 20 | Cheat sheet printed on 2 pages: the narrow print width triggered the phone layout | Print-specific layout: two columns, compact chips. Now 1 A4 page |
+| 21 | A glossary term doubled a word ("credit Credit spreads"), and glossary words were capitalised mid-sentence in print | Fixed the content and reused the same inline-term formatting in print |
+| 22 | A demand-driven oil drop was labelled "Oil supply relief" in hint mode | Renamed the playbook "Oil price slide" and widened its trigger |
 
 ---
 
 ## Verification results
 
-- **Unit tests:** 35 passing. They cover determinism and replay, factor coherence, the peg band, orders, margin and liquidation, financing, all mandate types, scoring maths, config overrides, the validator, procedural scenarios, the report, the optimal path, two-player convergence with late and out-of-order inputs, individual attribution (buckets sum to the team P&L, breach charged to the right player, idle player neutral), and the JSON parser.
+- **Unit tests:** 79 passing (35 engine/worker + 44 Learn). The Learn tests cover every lesson and every retry variant. Each one passes the scenario validator with zero repairs and no sentiment mismatches. The expected direction of every graded asset agrees with the engine's factor model. Following the playbook scores 100% and doing the opposite scores under 50%. The tests also check playbook matching, variant selection and glossary/playbook references. The other 35 cover determinism and replay, factor coherence, the peg band, orders, margin and liquidation, financing, all mandate types, scoring maths, config overrides, the validator, procedural scenarios, the report, the optimal path, two-player convergence with late and out-of-order inputs, individual attribution (buckets sum to the team P&L, breach charged to the right player, idle player neutral), and the JSON parser.
 - **Typecheck:** clean. **Production build:** clean.
 - **Browser runs (Playwright):**
   - **Solo session:** briefing, hotkey trading, scoring and debrief, with no console errors.
   - **Signed-in session:** a disguised historical replay, saved under RLS (session, orders, fills, 60 snapshots, score, debrief), plus the leaderboard, progress page, coach queue and pitch creation.
   - **Team session:** sign-in gate, non-allowlisted sign-up refused, shared allocation synced, either player starts the clock, cross-player trades labelled by player, end for both. Both debriefs showed the **same score and NAV**.
   - **Production sign-in:** the live URL rejects a wrong password and accepts the right one.
+- **Learn in the browser (Playwright):**
+  - **Lesson 1, offline:** the clock freezes at each decision, and three correct answers scored 100%. The plan ticked itself, and the retry offered attempt 2.
+  - **Lesson 2:** opening allocation through the briefing, then a live decision. Scored 100%.
+  - **Lesson 8:** the 30s timer ran out with no action. It continued by itself and scored that decision 50% (failed speed and why). The flat answer to the denial and the trade on the official news both scored 100%.
+  - **Hint mode:** a practice session showed the playbook card under a headline.
+  - **Cheat sheet:** prints on 1 A4 page.
+  - **Signed in:** (test in progress, result added next)
+- **Row-level security on `lesson_attempts`** (checked in SQL as each user): a player can read the team-mate's attempts, but a forged insert under the other player's id is blocked, and so is editing their rows. The Supabase security check shows no new warnings.
 - **Lighthouse (trading screen):** 100 desktop / 90 mobile.
 - **AI against the real `claude` CLI:**
   - A Medium scenario passed validation on the first attempt with zero repairs, and the blind sentiment check matched every headline.
@@ -170,6 +231,14 @@ Build log for the BOCHK x HKU Wealthathon practice app. Newest entries are at th
 - **Players:** the spec planned for a 3-person team with roles. Team mode is built for **2 players** as requested. Roles are stored but not enforced, and both players can trade.
 - **No pause in team mode**, so neither player can freeze the other's clock.
 - **Guest mode removed** when the app became private.
+- **Learn:**
+  - Lessons simulate one quarter (360 ticks) at Easy reaction speed instead of a full year, so each fits in about 4 minutes.
+  - The event date lives in `config/learn/lessons.ts` (`PRELIM_DATE`) rather than `event-rules.ts`.
+  - Content is typed with TypeScript interfaces and checked by tests (not Zod).
+  - Lesson 10's breach-fix decision gets 60s instead of 20s.
+  - Dictating a "why" uses the browser's speech recognition (Chrome/Safari), with no Whisper fallback.
+  - The "read the cheat sheet" tick is remembered per device.
+  - Headlines with no clear driver (one company's earnings, US dollar only) show no hint card.
 - **Round 1 format:** research found HKU's page says Round 1 also includes uploading a **strategy video**. Pitch mode doesn't have a recorded-video mode yet.
 
 ---
@@ -179,5 +248,6 @@ Build log for the BOCHK x HKU Wealthathon practice app. Newest entries are at th
 1. **Run the worker on your Mac:** add `SUPABASE_SERVICE_ROLE_KEY` and `WORKER_MODEL=claude-sonnet-5-5` to `.env.local`, then `npm run worker`. This tops up the scenario pool and enables the coach and the pitch judge.
 2. **Passwords** were set on request to short ones (AG and Nicolas). The site is public, so anyone who guesses them can sign in; choose longer ones in Settings if that matters.
 3. **Optional:** turn on leaked-password protection in Supabase Auth settings.
-4. **When the real rules arrive:** edit `config/event-rules.ts` (see the README table) and bump `version`.
-5. **Possible additions:** a recorded strategy-video mode for Round 1, enforced team roles, a team leaderboard, and an in-session chat or ping.
+4. **When the real Prelim date is known:** change `PRELIM_DATE` in `config/learn/lessons.ts` (currently assumed 8 Dec 2026); the plan and countdown follow it.
+5. **When the real rules arrive:** edit `config/event-rules.ts` (see the README table) and bump `version`.
+6. **Possible additions:** a recorded strategy-video mode for Round 1, enforced team roles, a team leaderboard, and an in-session chat or ping.
