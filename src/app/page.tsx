@@ -79,17 +79,17 @@ export default function Home() {
               <span className="small dim">Event-like pace. Same format as the Preliminary Round.</span>
             </div>
             <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <label className="f">Mode
+              <div className="f" role="group" aria-label="Mode">Mode
                 <span className="seg">
                   <button className={mode === 'synthetic' ? 'on' : ''} onClick={() => { setMode('synthetic'); setScenarioId('random'); }}>Synthetic</button>
                   <button className={mode === 'historical' ? 'on' : ''} onClick={() => { setMode('historical'); setScenarioId('random'); }}>Historical replay</button>
                 </span>
-              </label>
-              <label className="f">Difficulty
+              </div>
+              <div className="f" role="group" aria-label="Difficulty">Difficulty
                 <span className="seg">
                   {DIFFS.map((d) => <button key={d} className={difficulty === d ? 'on' : ''} onClick={() => { setDifficulty(d); setScenarioId('random'); }}>{EVENT_RULES.difficulty[d].label}</button>)}
                 </span>
-              </label>
+              </div>
               <label className="f">Scenario
                 <select value={scenarioId} onChange={(e) => setScenarioId(e.target.value)}>
                   <option value="random">Random (least played first)</option>

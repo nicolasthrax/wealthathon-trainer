@@ -69,7 +69,7 @@ export async function generateClient(db: Db) {
 }
 
 // ── Coach ───────────────────────────────────────────────────────────────────
-const CoachSchema = z.object({
+export const CoachSchema = z.object({
   summary: z.string(),
   mistakes: z.array(z.object({ title: z.string(), whatHappened: z.string(), mechanism: z.array(z.string()).min(2), fix: z.string() })).min(1).max(4),
   strengths: z.array(z.object({ title: z.string(), detail: z.string() })).min(1).max(4),
@@ -101,7 +101,7 @@ export async function transcribe(db: Db, audioPath: string): Promise<string | nu
 }
 
 // ── Pitch judge ─────────────────────────────────────────────────────────────
-const ScorecardSchema = z.object({
+export const ScorecardSchema = z.object({
   overall: z.number().min(0).max(100),
   verdict: z.string(),
   criteria: z.array(z.object({ id: z.string(), label: z.string(), score: z.number().min(0).max(10), justification: z.string(), improvement: z.string() })).min(3),

@@ -26,6 +26,7 @@ Open http://localhost:3000. Guest mode works immediately. Sign in to sync sessio
 | `npm test` | Engine + worker test suite (determinism, factor coherence, margin, mandate, scoring, validator, debrief) |
 | `npm run typecheck` | TypeScript, no emit |
 | `npm run worker` | Start the AI worker (see [worker/README.md](worker/README.md)) |
+| `npx tsx worker/ai-smoke.ts` | Run the coach + judge prompts on a replayed seed session (no DB) |
 | `npm run worker:dry -- medium` | Generate + validate one scenario and one client with Claude, without the DB |
 | `npm run fetch-history` | Re-download historical episode prices from Yahoo Finance into `public/seed/history/` (`-- --push` also uploads them) |
 | `npm run seed` | Upsert seed scenarios, procedural fillers, historical episodes and clients into Supabase (needs the service-role key) |
