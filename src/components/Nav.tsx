@@ -28,7 +28,7 @@ export function Nav() {
       <span className="sp" />
       <span className="small dim" title="AI worker on your Mac (scenario generator, coach, pitch judge)">
         <span className={`dot ${online ? 'on' : online === false ? 'off' : ''}`} />
-        {store.kind === 'local' ? 'Guest mode' : online ? 'AI worker online' : 'AI worker offline'}
+        {store.kind === 'local' ? 'Offline mode' : online ? 'AI worker online' : 'AI worker offline'}
       </span>
       {user ? (
         <span className="small dim">{user.email} · <a href="#" onClick={(e) => { e.preventDefault(); void supabase?.auth.signOut(); }}>Sign out</a></span>

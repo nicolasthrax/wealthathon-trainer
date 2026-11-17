@@ -121,7 +121,7 @@ export function PriceChart({ runner, assetId, disguise }: { runner: SessionRunne
     markersRef.current = createSeriesMarkers(series, []);
     shown.current = { asset: '', tick: -1, events: -1, fills: -1 };
     return () => { chart.remove(); chartRef.current = null; seriesRef.current = null; };
-  }, [runner, disguise]);
+  }, [runner.scenario, disguise]); // eslint-disable-line react-hooks/exhaustive-deps -- survives team-mode runner rebuilds
 
   // Incremental update on each tick (series.update) — full setData only when the asset changes.
   useEffect(() => {
@@ -169,7 +169,8 @@ export function PriceChart({ runner, assetId, disguise }: { runner: SessionRunne
 }
 
 // ── Positions / orders / fills ───────────────────────────────────────────────
-export function Blotter({ runner, onSelect, onFlatten, onChange }: { runner: SessionRunner; onSelect: (id: string) => void; onFlatten: (id: string) => void; onChange: () => void }) {
+export function Blotter({ runner, onSelect, onFlatten, onCancel, names }: { runner: SessionRunner; onSelect: (id: string) => void; onFlatten: (id: string) => void; onCancel: (orderId: string) => void; names?: Record<string, string> }) {
+  const who = (orderId: string) => { const pid = runner.orders.find((o) => o.id === orderId)?.participantId; return pid && names ? names[pid] ?? '' : ''; };
   const [tab, setTab] = useState<'pos' | 'ord' | 'fill'>('pos');
   const eq = runner.metrics.equity;
   const working = runner.orders.filter((o) => o.status === 'working');
@@ -211,7 +212,7 @@ export function Blotter({ runner, onSelect, onFlatten, onChange }: { runner: Ses
               {working.map((o) => (
                 <tr key={o.id}><td className="tk">{runner.assetById[o.assetId].ticker}</td><td className={o.side === 'buy' ? 'up' : 'down'}>{o.side.toUpperCase()}</td>
                   <td>{fmtMoney(o.qty)}</td><td>{fmtPx(o.limitPrice!, runner.assetById[o.assetId].decimals)}</td><td>{fmtPx(runner.price(o.assetId), runner.assetById[o.assetId].decimals)}</td>
-                  <td><button onClick={() => { runner.cancelOrder(o.id); onChange(); }}>Cancel</button></td></tr>
+                  <td><button onClick={() => onCancel(o.id)}>Cancel</button></td></tr>
               ))}
               {!working.length && <tr><td colSpan={6} className="dim" style={{ textAlign: 'left' }}>No working limit orders. <kbd>X</kbd> cancels all.</td></tr>}
             </tbody>
@@ -219,10 +220,10 @@ export function Blotter({ runner, onSelect, onFlatten, onChange }: { runner: Ses
         )}
         {tab === 'fill' && (
           <table className="q">
-            <thead><tr><th>Day</th><th>Asset</th><th>Side</th><th>Qty</th><th>Price</th><th>Real. P&amp;L</th></tr></thead>
+            <thead><tr><th>Day</th>{names && <th>Who</th>}<th>Asset</th><th>Side</th><th>Qty</th><th>Price</th><th>Real. P&amp;L</th></tr></thead>
             <tbody>
               {[...runner.fills].reverse().slice(0, 80).map((f) => (
-                <tr key={f.id}><td>{tickLabel(f.tick, runner.rules).replace('Day ', '').split('/')[0]}</td><td className="tk">{runner.assetById[f.assetId].ticker}</td>
+                <tr key={f.id}><td>{tickLabel(f.tick, runner.rules).replace('Day ', '').split('/')[0]}</td>{names && <td className="dim">{who(f.orderId)}</td>}<td className="tk">{runner.assetById[f.assetId].ticker}</td>
                   <td className={f.side === 'buy' ? 'up' : 'down'}>{f.source === 'liquidation' ? 'LIQ ' : ''}{f.side.toUpperCase()}</td><td>{fmtMoney(f.qty)}</td>
                   <td>{fmtPx(f.price, runner.assetById[f.assetId].decimals)}</td><td className={cls(f.realizedPnl)}>{f.realizedPnl ? fmtCompact(f.realizedPnl) : ''}</td></tr>
               ))}

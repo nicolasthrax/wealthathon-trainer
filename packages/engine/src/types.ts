@@ -103,7 +103,7 @@ export interface Fill {
   id: string; orderId: string; tick: number; assetId: string; side: Side; qty: number; price: number; fee: number; realizedPnl: number; source: OrderSource;
 }
 /** Deterministic input log: replaying it over the same path reproduces the session exactly. */
-export type LogEntry = { tick: number; kind: 'place'; input: OrderInput } | { tick: number; kind: 'cancel'; orderId: string };
+export type LogEntry = { tick: number; kind: 'place'; input: OrderInput } | { tick: number; kind: 'cancel'; orderId: string } | { tick: number; kind: 'end' };
 
 export interface Position { qty: number; avg: number }
 export interface MandateCheck { key: string; label: string; value: number; limit: number; ok: boolean; util: number; kind: 'max' | 'min' | 'flag'; breachTicks: number }

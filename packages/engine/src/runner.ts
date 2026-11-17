@@ -325,7 +325,7 @@ export function replaySession(opts: RunnerOpts, log: LogEntry[], toTick?: number
   const apply = () => {
     while (i < log.length && log[i].tick <= r.tick) {
       const e = log[i++];
-      if (e.kind === 'place') r.placeOrder(e.input); else r.cancelOrder(e.orderId);
+      if (e.kind === 'place') r.placeOrder(e.input); else if (e.kind === 'cancel') r.cancelOrder(e.orderId);
     }
   };
   apply();

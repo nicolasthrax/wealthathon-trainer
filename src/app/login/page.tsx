@@ -18,7 +18,7 @@ export default function Login() {
       : kind === 'up' ? await supabase.auth.signUp({ email, password: pw, options: { emailRedirectTo: redirect } })
       : await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: redirect } });
     setBusy(false);
-    if (r.error) { setMsg(r.error.message); return; }
+    if (r.error) { setMsg(/closed|not allowed|database error/i.test(r.error.message) ? 'This email is not invited to this app.' : r.error.message); return; }
     if (kind === 'in' || (kind === 'up' && r.data.session)) { router.push('/'); return; }
     setMsg(kind === 'link' ? 'Check your email for a sign-in link.' : 'Account created. Check your email to confirm, then sign in.');
   }
@@ -28,7 +28,7 @@ export default function Login() {
       <main className="page" style={{ maxWidth: 420 }}>
         <div className="card grid">
           <h1>Sign in</h1>
-          <p className="small dim">Signing in syncs sessions, the leaderboard and progress across devices, and unlocks the AI coach and pitch judge.</p>
+          <p className="small dim">Private app: only invited accounts can sign in. First time? Enter your invited email, choose a password and press Create account.</p>
           <label className="f">Email<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" /></label>
           <label className="f">Password<input type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" onKeyDown={(e) => e.key === 'Enter' && go('in')} /></label>
           <div className="row">

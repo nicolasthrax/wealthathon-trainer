@@ -6,3 +6,4 @@ export * from './runner';
 export * from './report';
 export * from './validator';
 export * from './procedural';
+export * from './team';

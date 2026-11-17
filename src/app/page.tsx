@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Nav } from '@/components/Nav';
-import { currentRules, useStore, type ScenarioMeta, type ScoreRow } from '@/lib/store';
+import { currentRules, useStore, type Profile, type ScenarioMeta, type ScoreRow, type SessionRow } from '@/lib/store';
 import { EVENT_RULES } from '@config/event-rules';
 import type { Difficulty } from '@engine/types';
 import { fmtPct } from '@/lib/format';
@@ -22,18 +22,25 @@ export default function Home() {
   const [disguise, setDisguise] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [invites, setInvites] = useState<SessionRow[]>([]);
 
   useEffect(() => {
     if (!ready) return;
     store.listScenarios().then(setScenarios).catch((e) => setErr(String(e.message ?? e)));
     store.listScores().then(setScores).catch(() => {});
+    store.listProfiles().then(setProfiles).catch(() => {});
+    const loadInvites = () => store.listTeamSessions().then(setInvites).catch(() => {});
+    loadInvites();
+    const iv = setInterval(loadInvites, 8000);
+    return () => clearInterval(iv);
   }, [store, ready]);
   useEffect(() => { setMinutes(EVENT_RULES.difficulty[difficulty].sessionMinutes); }, [difficulty]);
 
   const options = useMemo(() => scenarios.filter((s) => s.source === mode && (mode === 'historical' || s.difficulty === difficulty)), [scenarios, mode, difficulty]);
   const poolCount = (d: Difficulty) => scenarios.filter((s) => s.source === 'synthetic' && s.difficulty === d && s.used_count === 0).length;
 
-  async function start(quick = false) {
+  async function start(quick = false, team = false) {
     setBusy(true); setErr(null);
     try {
       const m = quick ? 'synthetic' : mode, d: Difficulty = quick ? 'medium' : difficulty;
@@ -51,12 +58,14 @@ export default function Home() {
       const seed = Math.random().toString(36).slice(2, 10);
       const row = await store.createSession({
         scenario: sc, client, seed, difficulty: m === 'historical' ? (quick ? 'medium' : difficulty) : sc.difficulty,
-        disguise: m === 'historical' ? disguise : false, session_minutes: quick ? EVENT_RULES.difficulty.medium.sessionMinutes : minutes, rules,
+        disguise: m === 'historical' ? disguise : false, session_minutes: quick ? EVENT_RULES.difficulty.medium.sessionMinutes : minutes, rules, team,
       });
       router.push(`/play/${row.id}`);
     } catch (e) { setErr((e as Error).message); setBusy(false); }
   }
 
+  const partners = profiles.filter((p) => p.id !== user?.id);
+  const myTeamSessions = invites.filter((x) => x.status === 'briefing' || x.status === 'active');
   const best = scores.length ? Math.max(...scores.map((s) => s.composite)) : null;
   const avg5 = scores.length ? scores.slice(0, 5).reduce((a, s) => a + s.composite, 0) / Math.min(5, scores.length) : null;
 
@@ -108,6 +117,7 @@ export default function Home() {
             </div>
             <div className="row" style={{ marginTop: 14 }}>
               <button className="primary" disabled={busy || !options.length} onClick={() => start(false)}>Start session</button>
+              <button disabled={busy || !options.length || partners.length === 0} onClick={() => start(false, true)} title="Shared portfolio, same news, both of you can trade">👥 Team session with {partners.map((p) => p.display_name).join(', ') || 'team-mate'}</button>
               <span className="small dim">
                 {EVENT_RULES.difficulty[difficulty].label}: {EVENT_RULES.difficulty[difficulty].events.join('-')} headlines
                 {EVENT_RULES.difficulty[difficulty].pauseAllowed ? ', pause allowed' : ''}{difficulty === 'hard' ? ', fake-outs, tighter client limits' : ''}.
@@ -129,6 +139,18 @@ export default function Home() {
         </section>
 
         <aside className="grid" style={{ alignContent: 'start' }}>
+          {myTeamSessions.length > 0 && (
+            <div className="card" style={{ borderColor: 'var(--accent)' }}>
+              <h2>👥 Team sessions</h2>
+              {myTeamSessions.map((x) => (
+                <div key={x.id} className="row small" style={{ justifyContent: 'space-between', padding: '4px 0' }}>
+                  <span><span className={`tag ${x.difficulty}`}>{x.difficulty}</span> {x.mode === 'historical' && x.disguise ? 'Historical replay (disguised)' : x.scenario_title}
+                    <span className="dim"> · {x.status === 'briefing' ? 'in briefing' : 'live now'}{x.owner_id !== user?.id ? ` · started by ${profiles.find((p) => p.id === x.owner_id)?.display_name ?? 'team-mate'}` : ''}</span></span>
+                  <Link href={`/play/${x.id}`}><button className="primary">Join</button></Link>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="card">
             <h2>Your record</h2>
             <div className="row" style={{ gap: 28 }}>
@@ -151,7 +173,6 @@ export default function Home() {
               <div className="kpi"><b>{scenarios.filter((s) => s.source === 'historical').length}</b><span>Historical</span></div>
             </div>
             <p className="dim">The pool never waits on AI. When your Mac worker is online it tops the pool up with new Claude-written scenarios.</p>
-            {!user && <p className="note info">Guest mode: sessions are saved in this browser only. <Link href="/login">Sign in</Link> to sync, use the AI coach and pitch judge, and draw from the AI scenario pool.</p>}
           </div>
         </aside>
       </main>

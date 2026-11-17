@@ -36,7 +36,7 @@ export default function Leaderboard() {
               {view.map((r, i) => (
                 <tr key={r.session_id}>
                   <td className="num dim">{i + 1}</td>
-                  <td><Link href={`/debrief/${r.session_id}`}>{r.scenario_title}</Link> <span className="dim small">{r.mode === 'historical' ? 'hist' : ''}</span></td>
+                  <td><Link href={`/debrief/${r.session_id}`}>{r.scenario_title}</Link> <span className="dim small">{r.mode === 'historical' ? 'hist' : ''}</span>{r.team_mode && <span className="tag plain" style={{ marginLeft: 4 }}>team</span>}</td>
                   <td className="small">{r.client_name}</td>
                   <td><span className={`tag ${r.difficulty}`}>{r.difficulty}</span></td>
                   <td className="r num" style={{ color: 'var(--accent)', fontWeight: 700 }}>{Number(r.composite).toFixed(1)}</td>

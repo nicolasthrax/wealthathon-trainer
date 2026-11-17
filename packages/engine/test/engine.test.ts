@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { EVENT_RULES, applyOverrides } from '@config/event-rules';
 import {
   SessionRunner, buildReport, computeOptimalPath, computeScore, evaluateMandate, expectedImpact, generatePath, mandateViolation,
-  ordersFromWeights, proceduralScenario, replaySession, solveSegment, sortinoFrom, tightenClient, validateScenario, ClientSchema,
+  ordersFromWeights, proceduralScenario, replaySession, solveSegment, sortinoFrom, tightenClient, validateScenario, ClientSchema, SharedSession,
   type Scenario, type Client, type EventRules,
 } from '@engine';
 import { SEED_SCENARIOS } from '@seed/scenarios';
@@ -285,5 +285,52 @@ describe('debrief', () => {
     }
     expect(opt.missed[0].gap).toBeGreaterThan(0);
     expect(computeOptimalPath(r)).toEqual(opt);
+  });
+});
+
+describe('team sessions (shared lockstep)', () => {
+  const base = { scenario: medium, seed: 'team', rules: R, client: free, difficulty: 'medium' as const };
+  const mkInputs = () => {
+    const ins: import('@engine').SharedInput[] = [];
+    let seq = 0;
+    const place = (tick: number, user: string, assetId: string, side: 'buy' | 'sell', qty: number, extra: object = {}) =>
+      ins.push({ seq: ++seq, tick, kind: 'place', user_id: user, participant_id: user, payload: { assetId, side, qty, type: 'market', ...extra } });
+    place(0, 'A', 'SPX', 'buy', 300);
+    place(0, 'B', 'UST20', 'buy', 20000);
+    place(40, 'A', 'TENCENT', 'sell', 1500);
+    place(40, 'B', 'GOLD', 'buy', 200);
+    place(90, 'B', 'HSI', 'buy', 50000, { type: 'limit', limitPrice: 1 }); // seq 5: never fills
+    ins.push({ seq: ++seq, tick: 120, kind: 'cancel', user_id: 'A', participant_id: 'A', payload: { placeSeq: 5 } });
+    place(300, 'A', 'TENCENT', 'buy', 1500);
+    ins.push({ seq: ++seq, tick: 700, kind: 'end', user_id: 'B', participant_id: 'B', payload: {} });
+    return ins;
+  };
+  it('two clients receiving inputs late and out of order converge on identical state', () => {
+    const ins = mkInputs();
+    // Client 1: receives every input exactly on its tick.
+    const c1 = new SharedSession(base);
+    for (const x of ins) { c1.advanceTo(x.tick); c1.integrate(x); }
+    c1.advanceTo(R.clock.totalTicks);
+    // Client 2: receives each input 1-3 ticks late, in a shuffled order.
+    const c2 = new SharedSession(base);
+    const late = ins.map((x, i) => ({ x, at: x.tick + 1 + (i % 3) })).sort((a, b) => a.at - b.at || b.x.seq - a.x.seq);
+    for (const { x, at } of late) { c2.advanceTo(at); c2.integrate(x); }
+    c2.advanceTo(R.clock.totalTicks);
+    expect(c2.rebuilds).toBeGreaterThan(0);
+    expect(c1.runner.finished && c2.runner.finished).toBe(true);
+    expect(c2.runner.metrics.equity).toBe(c1.runner.metrics.equity);
+    expect(c2.runner.fills).toEqual(c1.runner.fills);
+    expect(c1.runner.orders.find((o) => o.assetId === 'HSI')!.status).toBe('cancelled');
+    expect(c1.runner.orders[0].participantId).toBe('A');
+    // The runner's log replays to the same result (this is what the debrief uses).
+    const replayed = replaySession(base, c1.runner.log);
+    expect(replayed.metrics.equity).toBe(c1.runner.metrics.equity);
+  });
+  it('an end input fast-forwards both clients to year end', () => {
+    const c = new SharedSession(base);
+    c.advanceTo(10);
+    c.integrate({ seq: 1, tick: 10, kind: 'end', user_id: 'A', participant_id: null, payload: {} });
+    expect(c.runner.finished).toBe(true);
+    expect(c.runner.tick).toBe(R.clock.totalTicks);
   });
 });

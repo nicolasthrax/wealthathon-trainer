@@ -15,11 +15,13 @@ export interface SessionRow {
   id: string; scenario_id: string; scenario_title: string; client: Client; seed: string; difficulty: Difficulty; mode: 'synthetic' | 'historical';
   disguise: boolean; session_minutes: number; rules: EventRules; input_log: LogEntry[]; status: 'briefing' | 'active' | 'finished' | 'abandoned';
   created_at: string; finished_at?: string | null; participant_id?: string | null;
+  team_mode?: boolean; owner_id?: string; started_at?: string | null;
+  participants?: { id: string; user_id: string; role: string }[];
 }
 export interface ScoreRow {
   session_id: string; scenario_id: string; scenario_title: string; client_name: string | null; difficulty: Difficulty; mode: 'synthetic' | 'historical';
   composite: number; return_score: number; sortino_score: number; drawdown_score: number; mandate_score: number;
-  ret: number; sortino: number; max_dd: number; final_equity: number; created_at: string;
+  ret: number; sortino: number; max_dd: number; final_equity: number; created_at: string; team_mode?: boolean;
 }
 export interface DebriefRow { session_id: string; report: Report | null; optimal: OptimalResult | null; coach: CoachResult | null; coach_job_id: string | null }
 export interface JobRow { id: string; type: string; status: 'queued' | 'running' | 'done' | 'failed'; result: unknown; error: string | null; created_at: string }
@@ -35,7 +37,8 @@ export interface PitchRow {
   id: string; session_id: string | null; status: 'draft' | 'pitched' | 'qa' | 'scoring' | 'scored'; audio_path: string | null; transcript: string | null;
   qa: QA[]; scorecard: Scorecard | null; context: Record<string, unknown> | null; created_at: string;
 }
-export interface NewSession { scenario: ScenarioMeta; client: Client; seed: string; difficulty: Difficulty; disguise: boolean; session_minutes: number; rules: EventRules }
+export interface NewSession { scenario: ScenarioMeta; client: Client; seed: string; difficulty: Difficulty; disguise: boolean; session_minutes: number; rules: EventRules; team?: boolean }
+export interface Profile { id: string; display_name: string | null }
 
 export interface Store {
   kind: 'cloud' | 'local';
@@ -58,6 +61,8 @@ export interface Store {
   getOverrides(): Promise<RuleOverrides>;
   saveOverrides(o: RuleOverrides): Promise<void>;
   createPitch(sessionId: string | null, context: Record<string, unknown>): Promise<PitchRow>;
+  listProfiles(): Promise<Profile[]>;
+  listTeamSessions(): Promise<SessionRow[]>;
   getPitch(id: string): Promise<PitchRow | null>;
   listPitches(): Promise<PitchRow[]>;
   updatePitch(id: string, patch: Partial<Omit<PitchRow, 'id'>>): Promise<void>;
@@ -147,6 +152,8 @@ const localStore: Store = {
   async getOverrides() { return ls.get<RuleOverrides>('overrides', {}); },
   async saveOverrides(o) { ls.set('overrides', o); },
   async createPitch() { throw new Error(AI_GUEST); },
+  async listProfiles() { return []; },
+  async listTeamSessions() { return []; },
   async getPitch() { return null; },
   async listPitches() { return []; },
   async updatePitch() {},
@@ -156,7 +163,7 @@ const localStore: Store = {
 // ── Cloud store (Supabase, RLS-scoped to the signed-in user) ─────────────────
 function cloudStore(db: SupabaseClient, user: User): Store {
   const ok = <T,>(r: { data: T | null; error: { message: string } | null }): T => { if (r.error) throw new Error(r.error.message); return r.data as T; };
-  const SESSION_COLS = 'id,scenario_id,scenario_title,client,seed,difficulty,mode,disguise,session_minutes,rules,input_log,status,created_at,finished_at';
+  const SESSION_COLS = 'id,scenario_id,scenario_title,client,seed,difficulty,mode,disguise,session_minutes,rules,input_log,status,created_at,finished_at,team_mode,owner_id,started_at';
   return {
     kind: 'cloud',
     async listScenarios() {
@@ -169,16 +176,21 @@ function cloudStore(db: SupabaseClient, user: User): Store {
     },
     async createSession(n) {
       const row = ok(await db.from('sessions').insert({ scenario_id: n.scenario.id, scenario_title: n.scenario.title, client_id: n.client.id, client: n.client, seed: n.seed, difficulty: n.difficulty,
-        mode: n.scenario.source, disguise: n.disguise, session_minutes: n.session_minutes, rules: n.rules }).select(SESSION_COLS).single()) as SessionRow;
-      const p = await db.from('participants').insert({ session_id: row.id, role: 'solo' }).select('id').single();
+        mode: n.scenario.source, disguise: n.disguise, session_minutes: n.session_minutes, rules: n.rules, team_mode: !!n.team }).select(SESSION_COLS).single()) as SessionRow;
+      const p = await db.from('participants').insert({ session_id: row.id, role: n.team ? 'trader' : 'solo' }).select('id').single();
+      if (n.team) {
+        // Team mode: add every other account (the app only allows two) as a team-mate.
+        const others = ((await db.from('profiles').select('id')).data ?? []).filter((x) => x.id !== user.id);
+        if (others.length) ok(await db.from('participants').insert(others.map((o) => ({ session_id: row.id, user_id: o.id, role: 'risk_manager' }))).select('id'));
+      }
       void db.rpc('bump_scenario_used', { sid: n.scenario.id }).then(() => {});
       return { ...row, participant_id: p.data?.id ?? null };
     },
     async getSession(id) {
-      const { data } = await db.from('sessions').select(`${SESSION_COLS},participants(id,user_id)`).eq('id', id).maybeSingle();
+      const { data } = await db.from('sessions').select(`${SESSION_COLS},participants(id,user_id,role)`).eq('id', id).maybeSingle();
       if (!data) return null;
-      const { participants, ...row } = data as unknown as SessionRow & { participants: { id: string; user_id: string }[] };
-      return { ...row, participant_id: participants?.find((p) => p.user_id === user.id)?.id ?? null };
+      const row = data as unknown as SessionRow;
+      return { ...row, participant_id: row.participants?.find((p) => p.user_id === user.id)?.id ?? null };
     },
     async updateSession(id, patch) { ok(await db.from('sessions').update(patch).eq('id', id).select('id')); },
     async saveTrades(s, orders, fills) {
@@ -192,13 +204,18 @@ function cloudStore(db: SupabaseClient, user: User): Store {
     },
     async saveScore(s, sc, m) {
       ok(await db.from('scores').upsert({ session_id: s.id, participant_id: s.participant_id, scenario_id: s.scenario_id, scenario_title: s.scenario_title, client_name: s.client.name, difficulty: s.difficulty, mode: s.mode,
-        composite: sc.composite, return_score: sc.return, sortino_score: sc.sortino, drawdown_score: sc.drawdown, mandate_score: sc.mandate, ret: m.ret, sortino: m.sortino, max_dd: m.maxDD, final_equity: m.equity },
+        composite: sc.composite, return_score: sc.return, sortino_score: sc.sortino, drawdown_score: sc.drawdown, mandate_score: sc.mandate, ret: m.ret, sortino: m.sortino, max_dd: m.maxDD, final_equity: m.equity, team_mode: !!s.team_mode },
         { onConflict: 'session_id,user_id' }).select('id'));
     },
     async listScores() { return ok(await db.from('scores').select('*').order('created_at', { ascending: false }).limit(500)) as ScoreRow[]; },
-    async getDebrief(id) { return (await db.from('debriefs').select('session_id,report,optimal,coach,coach_job_id').eq('session_id', id).maybeSingle()).data as DebriefRow | null; },
-    async saveDebrief(id, patch) { ok(await db.from('debriefs').upsert({ session_id: id, ...patch, updated_at: new Date().toISOString() }, { onConflict: 'session_id' }).select('session_id')); },
-    async listDebriefs() { return ok(await db.from('debriefs').select('session_id,report,coach,coach_job_id').order('created_at', { ascending: false }).limit(200)) as DebriefRow[]; },
+    async getDebrief(id) { return (await db.from('debriefs').select('session_id,report,optimal,coach,coach_job_id').eq('session_id', id).eq('user_id', user.id).maybeSingle()).data as DebriefRow | null; },
+    async saveDebrief(id, patch) { ok(await db.from('debriefs').upsert({ session_id: id, user_id: user.id, ...patch, updated_at: new Date().toISOString() }, { onConflict: 'session_id,user_id' }).select('session_id')); },
+    async listDebriefs() { return ok(await db.from('debriefs').select('session_id,report,coach,coach_job_id').eq('user_id', user.id).order('created_at', { ascending: false }).limit(200)) as DebriefRow[]; },
+    async listProfiles() { return ok(await db.from('profiles').select('id,display_name')) as Profile[]; },
+    async listTeamSessions() {
+      const since = new Date(Date.now() - 12 * 3600_000).toISOString();
+      return ok(await db.from('sessions').select(SESSION_COLS).eq('team_mode', true).in('status', ['briefing', 'active']).gte('created_at', since).order('created_at', { ascending: false }).limit(10)) as SessionRow[];
+    },
     async enqueueJob(type, payload) { return ok(await db.from('ai_jobs').insert({ type, payload }).select('id,type,status,result,error,created_at').single()) as JobRow; },
     async getJob(id) { return (await db.from('ai_jobs').select('id,type,status,result,error,created_at').eq('id', id).maybeSingle()).data as JobRow | null; },
     async workerOnline() {

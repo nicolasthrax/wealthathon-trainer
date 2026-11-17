@@ -28,12 +28,16 @@ export function ClientCard({ client }: { client: SessionRunner['client'] }) {
   );
 }
 
-export function Briefing({ runner, title, storyline, disguise, onStart }: {
+export function Briefing({ runner, title, storyline, disguise, onStart, shared }: {
   runner: SessionRunner; title: string; storyline: string; disguise: boolean; onStart: (weights: Record<string, number>) => void;
+  /** Team mode: allocation is shared live with the team-mate; only `autoStart` players start the clock at zero. */
+  shared?: { value: Record<string, string>; onChange: (w: Record<string, string>) => void; autoStart: boolean; peers: string[]; lastEditBy?: string };
 }) {
   const rules = runner.rules;
   const [left, setLeft] = useState(rules.clock.briefingSeconds);
-  const [w, setW] = useState<Record<string, string>>({});
+  const [wLocal, setWLocal] = useState<Record<string, string>>({});
+  const w = shared?.value ?? wLocal;
+  const setW = (x: Record<string, string>) => (shared ? shared.onChange(x) : setWLocal(x));
   const started = useRef(false);
   const weights = useMemo((): Record<string, number> => Object.fromEntries(Object.entries(w).map(([k, v]) => [k, (Number(v) || 0) / 100]).filter(([, v]) => v)), [w]);
   const sum = Object.values(weights).reduce((a, b) => a + b, 0);
@@ -41,6 +45,7 @@ export function Briefing({ runner, title, storyline, disguise, onStart }: {
   const checks = evaluateMandate(runner.client, weights, 1 - sum, rules);
   const start = () => { if (started.current) return; started.current = true; onStart(weights); };
   const startRef = useRef(start); startRef.current = start;
+  const autoStartRef = useRef(shared?.autoStart ?? true); autoStartRef.current = shared?.autoStart ?? true;
 
   useEffect(() => {
     if (rules.clock.briefingSeconds <= 0) return;
@@ -48,7 +53,7 @@ export function Briefing({ runner, title, storyline, disguise, onStart }: {
     const iv = setInterval(() => {
       const l = rules.clock.briefingSeconds - (Date.now() - t0) / 1000;
       setLeft(l);
-      if (l <= 0) { clearInterval(iv); startRef.current(); }
+      if (l <= 0) { clearInterval(iv); if (autoStartRef.current) startRef.current(); }
     }, 250);
     return () => clearInterval(iv);
   }, [rules.clock.briefingSeconds]);
@@ -62,6 +67,7 @@ export function Briefing({ runner, title, storyline, disguise, onStart }: {
           <div className="stat clock"><span>Clock starts in</span><b className={left < 30 ? 'amber' : ''}>{fmtClock(left)}</b></div>
           <span className="dim small">Read the client, plan your opening allocation. Unallocated money stays in cash (earns nothing; HKDMM earns the money-market rate).</span>
           <span style={{ flex: 1 }} />
+          {shared && <span className="small">Team: <b>{shared.peers.join(' · ') || 'waiting for your team-mate…'}</b>{shared.lastEditBy ? <span className="dim"> · last edit by {shared.lastEditBy}</span> : null}</span>}
           <button className="primary" onClick={start}>Start the clock now ▶</button>
         </div>
       </div>

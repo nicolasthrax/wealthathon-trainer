@@ -7,7 +7,9 @@ Optimised for the Preliminary Round: a client brief, a short briefing, then one 
 - **Deterministic engine** (`packages/engine`): seeded factor model, market/limit orders, shorts, leverage, margin calls and liquidation, financing, optional costs, mandate tracking, composite scoring. Same scenario + seed + rules + order log = identical session.
 - **Debrief**: reaction time per headline, hit rate, best/worst trades, drawdown, breaches, turnover, plus an **optimal-path** overlay (a mandate-respecting rebalance at each headline using the headline's known shocks) and the biggest missed opportunities.
 - **AI layer on your Mac** (`worker/`): scenario + client generation (validated by code), coach critique and pitch judge. Runs through `claude -p` on your Claude subscription, with no API key.
-- **Works with the Mac off**: 15 validated scenarios + 5 historical episodes + 10 clients are already in Supabase. Guests can play without an account.
+- **Works with the Mac off**: 15 validated scenarios + 5 historical episodes + 10 clients are already in Supabase.
+- **Team mode**: two players share one portfolio, one clock and the same news. Either can trade, every fill shows who placed it, and the opening allocation is edited together during the briefing.
+- **Private**: only allowlisted accounts can sign up or sign in (see "Accounts" below).
 
 ## Run locally
 
@@ -19,7 +21,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000. Guest mode works immediately. Sign in to sync sessions and use the AI features.
+Open http://localhost:3000 and sign in with an allowlisted account.
 
 | Command | What it does |
 |---|---|
@@ -48,7 +50,20 @@ Project **wealthathon-trainer** (Singapore, free tier). The schema is in `supaba
 
 Auth: email + password or magic link. If sign-up emails are slow (Supabase's built-in mailer is rate-limited), turn off "Confirm email" under Authentication → Providers → Email while you're the only user.
 
-**Multiplayer-ready**: `sessions → participants (role: solo | news_analyst | trader | risk_manager) → orders/fills/snapshots/scores`. Membership checks go through `private.is_session_member()`, `orders` is in the Realtime publication, and `scores.team_id` is reserved. Team mode means adding participants to a session and broadcasting order inputs. Because the engine is deterministic, every client can replay the same input log.
+### Accounts (allowlist)
+
+Sign-ups are closed by a database trigger: only emails in `private.allowed_users` can create an account, and the display name comes from that table. To change who can use the app, run in the Supabase SQL editor:
+
+```sql
+insert into private.allowed_users (email, display_name) values ('someone@example.com', 'Name');
+delete from private.allowed_users where email = 'someone@example.com';
+```
+
+(Removing a row stops new sign-ups; to remove an existing account, also delete the user under Authentication → Users.)
+
+### Team mode
+
+`sessions (team_mode) → participants (role) → session_inputs`. Every order, cancel or "end" is inserted into `session_inputs`; the server-assigned `seq` gives one global order (by tick, then seq). Each browser applies the inputs to its own deterministic engine (`packages/engine/src/team.ts`) and, if an input arrives late, rebuilds and replays to the current tick in a few milliseconds. Both clients compute the clock from the server time and `sessions.started_at`, so they converge on identical state (covered by tests). Realtime carries the inputs, presence (who's online, what they're looking at) and the shared briefing allocation; a 5-second poll is the fallback. Each player gets their own score row, debrief and AI coach critique; scores carry `team_mode` for a future team leaderboard.
 
 ## Deploy to Vercel
 
