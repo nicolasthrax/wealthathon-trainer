@@ -211,7 +211,7 @@ Built from the interview spec in `.plans/learn-section-spec.md`, for two beginne
   - **Lesson 8:** the 30s timer ran out with no action. It continued by itself and scored that decision 50% (failed speed and why). The flat answer to the denial and the trade on the official news both scored 100%.
   - **Hint mode:** a practice session showed the playbook card under a headline.
   - **Cheat sheet:** prints on 1 A4 page.
-  - **Signed in:** (test in progress, result added next)
+  - **Signed in (two test accounts):** lesson 9 with 20s timers and real trades scored 100%. The attempt saved to Supabase with all decisions and the replay log, and the team-mate's Learn page showed the grade. Test accounts deleted afterwards.
 - **Row-level security on `lesson_attempts`** (checked in SQL as each user): a player can read the team-mate's attempts, but a forged insert under the other player's id is blocked, and so is editing their rows. The Supabase security check shows no new warnings.
 - **Lighthouse (trading screen):** 100 desktop / 90 mobile.
 - **AI against the real `claude` CLI:**
