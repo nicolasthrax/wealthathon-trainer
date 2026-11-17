@@ -93,7 +93,8 @@ Write a critique. Reply with ONLY JSON:
   "strengths": [ exactly 3 of { "title": "short", "detail": "specific evidence from the session" } ],
   "drill": { "title": "one concrete drill for the next session", "steps": ["3-5 steps"] }
 }
-Prioritise mistakes by score impact (return, Sortino, drawdown, mandate). If the student barely traded, say so and treat inaction as a mistake where it cost them.`;
+Prioritise mistakes by score impact (return, Sortino, drawdown, mandate). If the student barely traded, say so and treat inaction as a mistake where it cost them.
+If the payload has a "learning" field (playbooks from the app's Learn section that the student has passed or is struggling with), name the matching playbook in a mistake's fix (e.g. "Playbook: Hawkish surprise, Lesson 4"), and prefer pointing at struggling playbooks when they fit.`;
 }
 
 export const JUDGE_SYSTEM = `You are a senior judge from BOCHK Wealth Management at the Wealthathon Grand Final in the Bank of China Tower, Hong Kong.
@@ -129,4 +130,16 @@ Score the candidate as a Grand Final judge. For "consistency", compare their cla
 Reply with ONLY JSON:
 { "overall": 0-100, "verdict": "2-3 sentences",
   "criteria": [ ${criteria.map((c) => `{"id":"${c.id}","label":"${c.label}","score":0-10,"justification":"specific, cite their words or trades","improvement":"one concrete improvement"}`).join(', ')} ] }`;
+}
+
+export const LESSON_WHY_SYSTEM = `You are a friendly trading coach for two beginners preparing for the BOCHK x HKU Wealthathon simulation. Be brief, concrete and encouraging; plain English, no jargon without a short explanation.`;
+
+export function lessonWhyPrompt(payload: unknown): string {
+  return `A student just finished a guided lesson. For each decision you get the headline, the prompt, the playbook it tests, the model answer, the student's trades, their one-line "why", and their process grade.
+
+${JSON.stringify(payload)}
+
+For each decision, write ONE or TWO sentences on the student's "why": is the reasoning right (driver -> assets -> direction), what is missing or wrong, and one tip. If the why is empty, say what they should have written.
+Then a one-sentence overall summary.
+Reply with ONLY JSON: {"summary": "...", "comments": {"<decision id>": "...", ...}}`;
 }

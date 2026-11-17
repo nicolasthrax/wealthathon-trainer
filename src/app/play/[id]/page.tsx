@@ -11,6 +11,7 @@ import { Briefing } from '@/components/Briefing';
 import { Terminal, type TeamProps } from '@/components/terminal/Terminal';
 import { TeamSync, type TeamEvent } from '@/lib/team';
 import { fmtMoney } from '@/lib/format';
+import { HintCard } from '@/components/learn/Playbook';
 
 type Phase = 'loading' | 'briefing' | 'live' | 'saving' | 'error';
 const progressKey = (id: string) => `wt:progress:${id}`;
@@ -184,6 +185,7 @@ export default function Play({ params }: { params: Promise<{ id: string }> }) {
   if (phase === 'briefing') return <Briefing runner={r} title={title} storyline={scenario!.historical && session!.disguise ? scenario!.storyline.replace(/\b(19|20)\d{2}\b/g, '[year]') : scenario!.storyline} disguise={session!.disguise} onStart={onStart} shared={sharedBrief} />;
   return (
     <Terminal runner={r} title={title} secondsPerTick={secondsPerTick} disguise={session!.disguise} initialElapsedMs={elapsedRef.current}
-      onProgress={onProgress} onFinish={onFinish} onAbandon={onAbandon} team={team} />
+      onProgress={onProgress} onFinish={onFinish} onAbandon={onAbandon} team={team}
+      hint={session!.hints ? (e) => <HintCard event={e} /> : undefined} />
   );
 }

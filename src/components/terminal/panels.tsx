@@ -1,5 +1,5 @@
 'use client';
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createChart, AreaSeries, createSeriesMarkers, type IChartApi, type ISeriesApi, type ISeriesMarkersPluginApi, type SeriesMarker, type Time, type UTCTimestamp } from 'lightweight-charts';
 import type { SessionRunner } from '@engine/runner';
 import type { AssetDef, MandateCheck, NewsEvent } from '@engine/types';
@@ -15,7 +15,7 @@ const SRC_COLOR: Record<string, string> = { wire: '#5cc4ff', central_bank: '#ffb
 export function headlineOf(e: NewsEvent, disguise: boolean) { return disguise && e.altHeadline ? e.altHeadline : e.headline; }
 
 // ── News feed ────────────────────────────────────────────────────────────────
-export function NewsFeed({ runner, disguise, onPick }: { runner: SessionRunner; disguise: boolean; onPick?: (assetId: string) => void }) {
+export function NewsFeed({ runner, disguise, onPick, hint }: { runner: SessionRunner; disguise: boolean; onPick?: (assetId: string) => void; hint?: (e: NewsEvent) => ReactNode }) {
   const [open, setOpen] = useState<string | null>(null);
   const tick = runner.tick;
   const landed = runner.scenario.events.filter((e) => runner.path.eventTicks[e.id] <= tick).sort((a, b) => runner.path.eventTicks[b.id] - runner.path.eventTicks[a.id]);
@@ -39,6 +39,7 @@ export function NewsFeed({ runner, disguise, onPick }: { runner: SessionRunner; 
                 <span className="num">{tickLabel(t, runner.rules, runner.scenario, disguise)}</span>
               </div>
               <div className="hl">{headlineOf(e, disguise)}</div>
+              {hint?.(e)}
               {expanded && (
                 <div className="bd">
                   {e.body}

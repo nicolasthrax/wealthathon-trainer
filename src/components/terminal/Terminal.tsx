@@ -1,7 +1,7 @@
 'use client';
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from 'react';
 import type { SessionRunner } from '@engine/runner';
-import type { Order, OrderInput, Side, OrderType } from '@engine/types';
+import type { NewsEvent, Order, OrderInput, Side, OrderType } from '@engine/types';
 import { tickLabel } from '@engine/path';
 import { liveContribution } from '@engine/players';
 import { Blotter, NewsFeed, PriceChart, RiskPanel, Watchlist } from './panels';
@@ -20,7 +20,17 @@ interface Props {
   onAbandon: () => void;
   /** Team mode: shared clock and order routing through the sync layer. */
   team?: TeamProps;
+  /** Guided lessons: the clock stops at `holdAt()` and `onHold` is called while it waits there. */
+  lesson?: LessonHooks;
+  /** Rendered over the terminal (lesson decision banner). */
+  overlay?: ReactNode;
+  /** Hint mode: extra content under each headline (playbook card). */
+  hint?: (e: NewsEvent) => ReactNode;
+  hideEnd?: boolean;
+  abandonLabel?: string;
 }
+
+export interface LessonHooks { holdAt(): number | null; onHold(tick: number): void }
 
 export interface TeamProps {
   elapsedMs(): number;
@@ -39,7 +49,7 @@ export interface TeamProps {
 
 type Toast = { id: number; text: string; ok?: boolean };
 
-export function Terminal({ runner, title, secondsPerTick, disguise, initialElapsedMs, onProgress, onFinish, onAbandon, team }: Props) {
+export function Terminal({ runner, title, secondsPerTick, disguise, initialElapsedMs, onProgress, onFinish, onAbandon, team, lesson, overlay, hint, hideEnd, abandonLabel }: Props) {
   const [version, bump] = useReducer((x: number) => x + 1, 0);
   const [selected, setSelected] = useState<string>(() => runner.path.assets.includes('HSI') ? 'HSI' : runner.path.assets[0]);
   const [side, setSide] = useState<Side>('buy');
@@ -59,6 +69,8 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
   const pauseAllowed = runner.rules.difficulty[runner.difficulty].pauseAllowed && !team;
   const teamRef = useRef(team);
   teamRef.current = team;
+  const lessonRef = useRef(lesson);
+  lessonRef.current = lesson;
   const N = runner.N;
 
   const toast = useCallback((text: string, ok = false) => {
@@ -74,7 +86,9 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
       const c = clock.current, now = performance.now(), tm = teamRef.current;
       if (tm) c.elapsed = tm.elapsedMs(); else if (!c.paused) c.elapsed += now - c.last;
       c.last = now;
-      const target = Math.min(N, Math.floor(c.elapsed / 1000 / secondsPerTick));
+      let target = Math.min(N, Math.floor(c.elapsed / 1000 / secondsPerTick));
+      const hold = lessonRef.current?.holdAt() ?? null;
+      if (hold !== null && target >= hold) { target = hold; c.elapsed = Math.min(c.elapsed, hold * secondsPerTick * 1000); }
       const before = runner.tick;
       if (tm) tm.advance(target); else while (runner.tick < target && !runner.finished) runner.step();
       const stepped = runner.tick !== before;
@@ -85,6 +99,7 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
         lastMarginCall.current = runner.metrics.marginCall;
         if (runner.tick % 10 === 0) onProgress(c.elapsed);
       }
+      if (hold !== null && runner.tick === hold) lessonRef.current?.onHold(hold);
       if (runner.finished && !finished.current) { finished.current = true; onFinish(); }
     }, 100);
     return () => clearInterval(iv);
@@ -145,6 +160,7 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const tgt = e.target as HTMLElement;
+      if (tgt.tagName === 'TEXTAREA' || tgt.closest?.('[data-nohotkeys]')) return;
       const inInput = tgt.tagName === 'INPUT' || tgt.tagName === 'SELECT' || tgt.tagName === 'TEXTAREA';
       const k = e.key.toLowerCase();
       const { input: inp, selected: sel } = stateRef.current;
@@ -211,16 +227,16 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
         {team && team.peers.map((p) => (
           <span key={p.name} className="small" title={p.role.replace('_', ' ')}><span className="dot on" />{p.name}{p.selected ? <span className="dim"> · {runner.assetById[p.selected]?.ticker}</span> : null}</span>
         ))}
-        <button onClick={() => {
+        {!hideEnd && <button onClick={() => {
           if (!confirm(team ? 'Fast-forward to year end for BOTH players? Current positions are held until the end and then scored.' : 'Fast-forward to year end? Your current positions are held until the end and then scored.')) return;
           if (team) void team.end().catch((e) => toast(e.message)); else { while (!runner.finished) runner.step(); bump(); }
-        }}>End &amp; score</button>
-        <button className="ghost" onClick={() => { if (confirm(team ? 'Leave this team session? It keeps running for your team-mate.' : 'Abandon this session? It will not be scored.')) onAbandon(); }}>{team ? 'Leave' : 'Abandon'}</button>
+        }}>End &amp; score</button>}
+        <button className="ghost" onClick={() => { if (confirm(team ? 'Leave this team session? It keeps running for your team-mate.' : abandonLabel ? `${abandonLabel}? Progress in this attempt is lost.` : 'Abandon this session? It will not be scored.')) onAbandon(); }}>{team ? 'Leave' : abandonLabel ?? 'Abandon'}</button>
       </div>
 
       <div className="body">
         <div className="col" style={{ gridTemplateRows: 'minmax(0, 1fr)' }}>
-          <NewsFeed runner={runner} disguise={disguise} onPick={(id) => { select(id); if (mtab === 'news') goTab('trade'); }} />
+          <NewsFeed runner={runner} disguise={disguise} hint={hint} onPick={(id) => { select(id); if (mtab === 'news') goTab('trade'); }} />
         </div>
         <div className="col mid">
           <PriceChart runner={runner} assetId={selected} disguise={disguise} />
@@ -285,6 +301,7 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
         <span>{runner.rules.costs.enabled ? 'Costs ON' : 'No transaction costs'} · Shorts {runner.rules.shorting.allowed ? 'on' : 'off'} · Max lev {runner.rules.margin.maxLeverage}x · Rules {runner.rules.version}</span>
       </div>
 
+      {overlay}
       <div className="toasts">{toasts.map((t) => <div key={t.id} className={`toast ${t.ok ? 'ok' : ''}`}>{t.text}</div>)}</div>
       {paused && <div style={{ position: 'fixed', inset: '38px 0 20px 0', background: '#000a', display: 'grid', placeItems: 'center', fontSize: 28, fontWeight: 700, color: 'var(--accent)' }} onClick={() => setPaused(false)}>PAUSED · Space to resume</div>}
     </div>

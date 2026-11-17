@@ -21,6 +21,7 @@ export default function Home() {
   const [scenarioId, setScenarioId] = useState<string>('random');
   const [minutes, setMinutes] = useState<number>(EVENT_RULES.difficulty.medium.sessionMinutes);
   const [disguise, setDisguise] = useState(true);
+  const [hints, setHints] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -59,7 +60,7 @@ export default function Home() {
       const seed = Math.random().toString(36).slice(2, 10);
       const row = await store.createSession({
         scenario: sc, client, seed, difficulty: m === 'historical' ? (quick ? 'medium' : difficulty) : sc.difficulty,
-        disguise: m === 'historical' ? disguise : false, session_minutes: quick ? EVENT_RULES.difficulty.medium.sessionMinutes : minutes, rules, team,
+        disguise: m === 'historical' ? disguise : false, session_minutes: quick ? EVENT_RULES.difficulty.medium.sessionMinutes : minutes, rules, team, hints: !quick && hints,
       });
       router.push(`/play/${row.id}`);
     } catch (e) { setErr((e as Error).message); setBusy(false); }
@@ -117,6 +118,10 @@ export default function Home() {
                   Disguise: hide dates and the episode name, and anonymise headlines, so you can&apos;t trade on hindsight.
                 </label>
               )}
+              <label className="row small" style={{ gridColumn: '1 / 3' }} title="Learning mode: kept off the leaderboard and separated in Progress">
+                <input type="checkbox" checked={hints} onChange={(e) => setHints(e.target.checked)} />
+                Hints (learning mode): when a headline lands, show which <Link href="/learn/playbooks">playbook</Link> it matches and what usually moves. Hinted sessions stay off the leaderboard.
+              </label>
             </div>
             <div className="row" style={{ marginTop: 14 }}>
               <button className="primary" disabled={busy || !options.length} onClick={() => start(false)}>Start session</button>

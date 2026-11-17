@@ -7,6 +7,8 @@ import { tickLabel } from '@engine/path';
 import { CLASS_LABEL } from '@engine/mandate';
 import { normaliseWeights } from '@engine/scoring';
 import { Nav } from '@/components/Nav';
+import { PlaybookTag } from '@/components/learn/Playbook';
+import { playbookLearning } from '@/lib/learn';
 import { LineChart } from '@/components/LineChart';
 import { ClientCard } from '@/components/Briefing';
 import { headlineOf } from '@/components/terminal/panels';
@@ -17,7 +19,7 @@ import { sessionContext as coachPayload } from '@/lib/context';
 
 export default function Debrief({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { store, ready } = useStore();
+  const { store, ready, user } = useStore();
   const [session, setSession] = useState<SessionRow | null>(null);
   const [runner, setRunner] = useState<SessionRunner | null>(null);
   const [report, setReport] = useState<Report | null>(null);
@@ -70,6 +72,9 @@ export default function Debrief({ params }: { params: Promise<{ id: string }> })
         const strip = (p: (typeof players.players)[number]) => ({ ...p, curve: undefined, name: p.participantId ? pnames[p.participantId] : 'Team (opening allocation)' });
         payload.teamSession = { note: 'Shared portfolio. Critique THIS player (you) mainly on their own trades; the team result is shared.', you: me && strip(me), others: players.players.filter((p) => p !== me).map(strip), financing: players.financing };
       }
+      // Learn section: which playbooks this player has learned or is struggling with, so the coach can point to them.
+      const attempts = await store.listLessonAttempts().catch(() => []);
+      payload.learning = { ...playbookLearning(attempts, user?.id ?? null), note: 'Playbook ids from the Learn section. Refer to playbooks by name (e.g. "Hawkish surprise, Lesson 4") when a mistake matches one, especially a struggling one.' };
       const j = await store.enqueueJob('coach', payload);
       await store.saveDebrief(id, { coach_job_id: j.id });
       setDebrief((d) => ({ ...(d ?? { session_id: id, report, optimal, coach: null }), coach_job_id: j.id }));
@@ -106,7 +111,7 @@ export default function Debrief({ params }: { params: Promise<{ id: string }> })
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <div>
             <h1>Debrief · {title}</h1>
-            <div className="small dim"><span className={`tag ${session.difficulty}`}>{session.difficulty}</span> {session.mode} · client {session.client.name} · seed {session.seed} · rules {session.rules.version}</div>
+            <div className="small dim"><span className={`tag ${session.difficulty}`}>{session.difficulty}</span>{session.hints && <span className="tag plain" style={{ marginLeft: 4, color: 'var(--purple)' }} title="Played with hints on: kept off the leaderboard">hints</span>} {session.mode} · client {session.client.name} · seed {session.seed} · rules {session.rules.version}</div>
           </div>
           <div className="row">
             <Link href={`/pitch/new?session=${id}`}><button>🎤 Defend your strategy</button></Link>
@@ -210,7 +215,7 @@ export default function Debrief({ params }: { params: Promise<{ id: string }> })
                   <tr key={e.eventId}>
                     <td className="num dim">{tickLabel(e.tick, runner.rules, runner.scenario, false)}</td>
                     <td><span className={`tag ${e.source}`}>{SRC_LABEL[e.source]}</span>{e.kind !== 'normal' && <div className="small amber">{e.kind.replace('_', ' ')}</div>}</td>
-                    <td>{headlineOf(ev, false)}</td>
+                    <td>{headlineOf(ev, false)}<PlaybookTag event={ev} /></td>
                     <td className="num">{e.topImpacts.slice(0, 3).map((t) => <span key={t.assetId} className={cls(t.impact)} style={{ marginRight: 8 }}>{name(t.assetId)} {fmtPct(t.impact, 1)}</span>)}</td>
                     <td className="r num">{e.reactionSeconds !== null ? `${e.reactionSeconds.toFixed(1)}s` : <span className="dim">none</span>}</td>
                     <td className="num">{e.firstTrade ? <span className={e.firstTrade.side === 'buy' ? 'up' : 'down'}>{e.firstTrade.side.toUpperCase()} {name(e.firstTrade.assetId)}</span> : ''}</td>

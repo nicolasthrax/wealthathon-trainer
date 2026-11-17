@@ -17,7 +17,8 @@ export default function Leaderboard() {
   const [mode, setMode] = useState('all');
   const [sort, setSort] = useState<SortKey>('composite');
   useEffect(() => { if (ready) store.listScores().then(setRows).catch(() => {}); }, [store, ready]);
-  const view = useMemo(() => rows.filter((r) => (diff === 'all' || r.difficulty === diff) && (mode === 'all' || r.mode === mode || (mode === 'team' && r.team_mode) || (mode === 'solo' && !r.team_mode)))
+  const hintedCount = rows.filter((r) => r.hints).length;
+  const view = useMemo(() => rows.filter((r) => !r.hints && (diff === 'all' || r.difficulty === diff) && (mode === 'all' || r.mode === mode || (mode === 'team' && r.team_mode) || (mode === 'solo' && !r.team_mode)))
     .sort((a, b) => sort === 'created_at' ? b.created_at.localeCompare(a.created_at) : sort === 'max_dd' ? a.max_dd - b.max_dd : sort === 'mine' ? mine(b) - mine(a) : (b[sort] as number) - (a[sort] as number)), [rows, diff, mode, sort]);
   const th = (k: SortKey, label: string) => <th className="r" style={{ cursor: 'pointer', color: sort === k ? 'var(--accent)' : undefined }} onClick={() => setSort(k)}>{label}</th>;
   return (
@@ -25,7 +26,7 @@ export default function Leaderboard() {
       <Nav />
       <main className="page grid">
         <div className="row" style={{ justifyContent: 'space-between' }}>
-          <h1>Leaderboard</h1>
+          <div><h1>Leaderboard</h1>{hintedCount > 0 && <div className="small dim">{hintedCount} session{hintedCount > 1 ? 's' : ''} played with hints on {hintedCount > 1 ? 'are' : 'is'} not listed.</div>}</div>
           <div className="row">
             <span className="seg">{['all', 'easy', 'medium', 'hard'].map((d) => <button key={d} className={diff === d ? 'on' : ''} onClick={() => setDiff(d)}>{d}</button>)}</span>
             <span className="seg">{['all', 'synthetic', 'historical', 'team', 'solo'].map((m) => <button key={m} className={mode === m ? 'on' : ''} onClick={() => setMode(m)}>{m}</button>)}</span>

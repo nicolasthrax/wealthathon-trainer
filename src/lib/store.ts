@@ -17,12 +17,14 @@ export interface SessionRow {
   disguise: boolean; session_minutes: number; rules: EventRules; input_log: LogEntry[]; status: 'briefing' | 'active' | 'finished' | 'abandoned';
   created_at: string; finished_at?: string | null; participant_id?: string | null;
   team_mode?: boolean; owner_id?: string; started_at?: string | null;
+  /** Hint mode (learning): playbook cards on headlines; kept off the leaderboard. */
+  hints?: boolean;
   participants?: { id: string; user_id: string; role: string }[];
 }
 export interface ScoreRow {
   session_id: string; scenario_id: string; scenario_title: string; client_name: string | null; difficulty: Difficulty; mode: 'synthetic' | 'historical';
   composite: number; return_score: number; sortino_score: number; drawdown_score: number; mandate_score: number;
-  ret: number; sortino: number; max_dd: number; final_equity: number; created_at: string; team_mode?: boolean;
+  ret: number; sortino: number; max_dd: number; final_equity: number; created_at: string; team_mode?: boolean; hints?: boolean;
   /** Team sessions: this player's own trades (attributed by fill). Null for solo sessions. */
   player_composite?: number | null; player_return_score?: number | null; player_sortino_score?: number | null; player_drawdown_score?: number | null;
   player_mandate_score?: number | null; player_pnl?: number | null; player_trades?: number | null; player_hit_rate?: number | null; player_avg_reaction?: number | null;
@@ -41,8 +43,18 @@ export interface PitchRow {
   id: string; session_id: string | null; status: 'draft' | 'pitched' | 'qa' | 'scoring' | 'scored'; audio_path: string | null; transcript: string | null;
   qa: QA[]; scorecard: Scorecard | null; context: Record<string, unknown> | null; created_at: string;
 }
-export interface NewSession { scenario: ScenarioMeta; client: Client; seed: string; difficulty: Difficulty; disguise: boolean; session_minutes: number; rules: EventRules; team?: boolean }
+export interface NewSession { scenario: ScenarioMeta; client: Client; seed: string; difficulty: Difficulty; disguise: boolean; session_minutes: number; rules: EventRules; team?: boolean; hints?: boolean }
 export interface Profile { id: string; display_name: string | null }
+export interface LessonAttemptRow {
+  id: string; user_id: string; lesson_id: string; attempt: number; seed: string; variant: Record<string, number>;
+  decisions: LessonDecisionRecord[]; input_log: LogEntry[]; grade: number; passed: boolean;
+  ai_job_id: string | null; ai_feedback: { comments: Record<string, string>; summary?: string } | null; created_at: string;
+}
+export interface LessonDecisionRecord {
+  id: string; playbookId: string; grade: number; checks: { id: string; label: string; pass: boolean; detail: string }[];
+  trades: { assetId: string; dq: number; deltaPct: number }[]; outcome: number; why: string; actionSec: number | null; tick: number;
+}
+export type NewLessonAttempt = Omit<LessonAttemptRow, 'id' | 'user_id' | 'created_at' | 'ai_job_id' | 'ai_feedback'>;
 
 export interface Store {
   kind: 'cloud' | 'local';
@@ -71,6 +83,10 @@ export interface Store {
   listPitches(): Promise<PitchRow[]>;
   updatePitch(id: string, patch: Partial<Omit<PitchRow, 'id'>>): Promise<void>;
   uploadAudio(pitchId: string, name: string, blob: Blob): Promise<string>;
+  saveLessonAttempt(a: NewLessonAttempt): Promise<LessonAttemptRow>;
+  updateLessonAttempt(id: string, patch: Partial<Pick<LessonAttemptRow, 'ai_job_id' | 'ai_feedback'>>): Promise<void>;
+  /** Every player's attempts (both players see each other's progress). */
+  listLessonAttempts(): Promise<LessonAttemptRow[]>;
 }
 
 const playerCols = (p?: PlayerStats) => p ? {
@@ -128,7 +144,7 @@ const localStore: Store = {
   },
   async createSession(n) {
     const row: SessionRow = { id: crypto.randomUUID(), scenario_id: n.scenario.id, scenario_title: n.scenario.title, client: n.client, seed: n.seed, difficulty: n.difficulty,
-      mode: n.scenario.source, disguise: n.disguise, session_minutes: n.session_minutes, rules: n.rules, input_log: [], status: 'briefing', created_at: new Date().toISOString() };
+      mode: n.scenario.source, disguise: n.disguise, session_minutes: n.session_minutes, rules: n.rules, input_log: [], status: 'briefing', created_at: new Date().toISOString(), hints: !!n.hints };
     ls.set(`session:${row.id}`, row);
     const used = ls.get<Record<string, number>>('used', {}); used[row.scenario_id] = (used[row.scenario_id] ?? 0) + 1; ls.set('used', used);
     return row;
@@ -140,7 +156,7 @@ const localStore: Store = {
   async saveScore(s, sc, m) {
     const rows = ls.get<ScoreRow[]>('scores', []).filter((r) => r.session_id !== s.id);
     rows.unshift({ session_id: s.id, scenario_id: s.scenario_id, scenario_title: s.scenario_title, client_name: s.client.name, difficulty: s.difficulty, mode: s.mode, composite: sc.composite,
-      return_score: sc.return, sortino_score: sc.sortino, drawdown_score: sc.drawdown, mandate_score: sc.mandate, ret: m.ret, sortino: m.sortino, max_dd: m.maxDD, final_equity: m.equity, created_at: new Date().toISOString() });
+      return_score: sc.return, sortino_score: sc.sortino, drawdown_score: sc.drawdown, mandate_score: sc.mandate, ret: m.ret, sortino: m.sortino, max_dd: m.maxDD, final_equity: m.equity, created_at: new Date().toISOString(), hints: !!s.hints });
     ls.set('scores', rows);
   },
   async listScores() { return ls.get<ScoreRow[]>('scores', []); },
@@ -168,12 +184,19 @@ const localStore: Store = {
   async listPitches() { return []; },
   async updatePitch() {},
   async uploadAudio() { throw new Error(AI_GUEST); },
+  async saveLessonAttempt(a) {
+    const row: LessonAttemptRow = { ...a, id: crypto.randomUUID(), user_id: 'local', created_at: new Date().toISOString(), ai_job_id: null, ai_feedback: null };
+    ls.set('lessons', [row, ...ls.get<LessonAttemptRow[]>('lessons', [])].slice(0, 300));
+    return row;
+  },
+  async updateLessonAttempt(id, patch) { ls.set('lessons', ls.get<LessonAttemptRow[]>('lessons', []).map((r) => (r.id === id ? { ...r, ...patch } : r))); },
+  async listLessonAttempts() { return ls.get<LessonAttemptRow[]>('lessons', []); },
 };
 
 // ── Cloud store (Supabase, RLS-scoped to the signed-in user) ─────────────────
 function cloudStore(db: SupabaseClient, user: User): Store {
   const ok = <T,>(r: { data: T | null; error: { message: string } | null }): T => { if (r.error) throw new Error(r.error.message); return r.data as T; };
-  const SESSION_COLS = 'id,scenario_id,scenario_title,client,seed,difficulty,mode,disguise,session_minutes,rules,input_log,status,created_at,finished_at,team_mode,owner_id,started_at';
+  const SESSION_COLS = 'id,scenario_id,scenario_title,client,seed,difficulty,mode,disguise,session_minutes,rules,input_log,status,created_at,finished_at,team_mode,owner_id,started_at,hints';
   return {
     kind: 'cloud',
     async listScenarios() {
@@ -186,7 +209,7 @@ function cloudStore(db: SupabaseClient, user: User): Store {
     },
     async createSession(n) {
       const row = ok(await db.from('sessions').insert({ scenario_id: n.scenario.id, scenario_title: n.scenario.title, client_id: n.client.id, client: n.client, seed: n.seed, difficulty: n.difficulty,
-        mode: n.scenario.source, disguise: n.disguise, session_minutes: n.session_minutes, rules: n.rules, team_mode: !!n.team }).select(SESSION_COLS).single()) as SessionRow;
+        mode: n.scenario.source, disguise: n.disguise, session_minutes: n.session_minutes, rules: n.rules, team_mode: !!n.team, hints: !!n.hints }).select(SESSION_COLS).single()) as SessionRow;
       const p = await db.from('participants').insert({ session_id: row.id, role: n.team ? 'trader' : 'solo' }).select('id').single();
       if (n.team) {
         // Team mode: add every other account (the app only allows two) as a team-mate.
@@ -214,7 +237,7 @@ function cloudStore(db: SupabaseClient, user: User): Store {
     },
     async saveScore(s, sc, m, player) {
       ok(await db.from('scores').upsert({ session_id: s.id, participant_id: s.participant_id, scenario_id: s.scenario_id, scenario_title: s.scenario_title, client_name: s.client.name, difficulty: s.difficulty, mode: s.mode,
-        composite: sc.composite, return_score: sc.return, sortino_score: sc.sortino, drawdown_score: sc.drawdown, mandate_score: sc.mandate, ret: m.ret, sortino: m.sortino, max_dd: m.maxDD, final_equity: m.equity, team_mode: !!s.team_mode, ...playerCols(player) },
+        composite: sc.composite, return_score: sc.return, sortino_score: sc.sortino, drawdown_score: sc.drawdown, mandate_score: sc.mandate, ret: m.ret, sortino: m.sortino, max_dd: m.maxDD, final_equity: m.equity, team_mode: !!s.team_mode, hints: !!s.hints, ...playerCols(player) },
         { onConflict: 'session_id,user_id' }).select('id'));
     },
     async listScores() { return ok(await db.from('scores').select('*').order('created_at', { ascending: false }).limit(500)) as ScoreRow[]; },
@@ -245,6 +268,9 @@ function cloudStore(db: SupabaseClient, user: User): Store {
       if (error) throw new Error(error.message);
       return p;
     },
+    async saveLessonAttempt(a) { return ok(await db.from('lesson_attempts').insert(a).select('*').single()) as LessonAttemptRow; },
+    async updateLessonAttempt(id, patch) { ok(await db.from('lesson_attempts').update(patch).eq('id', id).select('id')); },
+    async listLessonAttempts() { return ok(await db.from('lesson_attempts').select('id,user_id,lesson_id,attempt,seed,variant,decisions,grade,passed,ai_job_id,ai_feedback,created_at').order('created_at', { ascending: false }).limit(500)) as LessonAttemptRow[]; },
   };
 }
 

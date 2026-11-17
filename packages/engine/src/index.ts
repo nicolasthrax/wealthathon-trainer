@@ -8,3 +8,4 @@ export * from './validator';
 export * from './procedural';
 export * from './team';
 export * from './players';
+export * from './learn';

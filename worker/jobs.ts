@@ -13,7 +13,7 @@ import { solveSegment } from '../packages/engine/src/report';
 import { evaluateMandate, mandateViolation } from '../packages/engine/src/mandate';
 import { SEED_SCENARIOS } from '../seed/scenarios';
 import { claudeJson } from './claude';
-import { COACH_SYSTEM, JUDGE_SYSTEM, clientPrompt, coachPrompt, judgeQuestionPrompt, judgeScorePrompt, scenarioPrompt, sentimentPrompt } from './prompts';
+import { COACH_SYSTEM, JUDGE_SYSTEM, LESSON_WHY_SYSTEM, clientPrompt, coachPrompt, judgeQuestionPrompt, judgeScorePrompt, lessonWhyPrompt, scenarioPrompt, sentimentPrompt } from './prompts';
 
 export interface Job { id: string; user_id: string | null; type: string; payload: Record<string, unknown> }
 type Db = SupabaseClient;
@@ -145,11 +145,21 @@ export async function judge(db: Db, job: Job) {
   return { action, scorecard: card };
 }
 
+// ── Lesson "why" feedback ───────────────────────────────────────────────────
+export const LessonWhySchema = z.object({ summary: z.string(), comments: z.record(z.string(), z.string()) });
+export async function lessonWhy(db: Db, job: Job) {
+  const result = await claudeJson(lessonWhyPrompt(job.payload), (x) => LessonWhySchema.parse(x), { system: LESSON_WHY_SYSTEM });
+  const id = job.payload.attemptId as string | undefined;
+  if (id && job.user_id) await db.from('lesson_attempts').update({ ai_feedback: result }).eq('id', id).eq('user_id', job.user_id);
+  return result;
+}
+
 export const HANDLERS: Record<string, (db: Db, job: Job) => Promise<unknown>> = {
+  lesson_why: lessonWhy,
   generate_scenario: generateScenario,
   generate_client: (db) => generateClient(db),
   coach,
   judge,
 };
 /** User-facing jobs run before background pool top-ups. */
-export const PRIORITY: Record<string, number> = { judge: 0, coach: 1, generate_client: 5, generate_scenario: 5 };
+export const PRIORITY: Record<string, number> = { judge: 0, coach: 1, lesson_why: 2, generate_client: 5, generate_scenario: 5 };

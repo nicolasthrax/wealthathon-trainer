@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { Nav } from '@/components/Nav';
 import { LineChart } from '@/components/LineChart';
@@ -8,7 +9,10 @@ import { CAT_LABEL, cls, fmtCompact } from '@/lib/format';
 
 export default function Progress() {
   const { store, ready } = useStore();
-  const [scores, setScores] = useState<ScoreRow[]>([]);
+  const [allScores, setScores] = useState<ScoreRow[]>([]);
+  // Hinted (learning-mode) sessions are kept out of the trend and the averages.
+  const scores = useMemo(() => allScores.filter((s) => !s.hints), [allScores]);
+  const hinted = useMemo(() => allScores.filter((s) => s.hints), [allScores]);
   const [debriefs, setDebriefs] = useState<DebriefRow[]>([]);
   useEffect(() => {
     if (!ready) return;
@@ -61,6 +65,7 @@ export default function Progress() {
       <Nav />
       <main className="page grid">
         <h1>Progress</h1>
+        {hinted.length > 0 && <div className="small dim">Not counted below: {hinted.length} session{hinted.length > 1 ? 's' : ''} played with hints on (avg score {(hinted.reduce((a, s) => a + Number(s.team_mode && s.player_composite != null ? s.player_composite : s.composite), 0) / hinted.length).toFixed(1)}). See <Link href="/learn">Learn</Link> for lesson progress.</div>}
         {!scores.length && <p className="dim">Play a few sessions to see trends and weak spots.</p>}
         {lines.length > 0 && <div className="card"><h2>Score trend ({scores.length} sessions)</h2><LineChart lines={lines} height={220} fmt={fmt1} xLabel={xl} /></div>}
         {weakComp && <p className="note">Your weakest score component so far: <b>{weakComp[0]}</b> (avg {weakComp[1].toFixed(0)}/100).{cat[0] && <> Weakest news type: <b>{CAT_LABEL[cat[0].k]}</b>.</>} Focus your next drills there.</p>}

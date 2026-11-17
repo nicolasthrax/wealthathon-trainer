@@ -6,7 +6,7 @@ import { supabase, useStore, type Profile } from '@/lib/store';
 import { leavePresence, usePresence, whereLabel } from '@/lib/presence';
 
 const LINKS = [
-  ['/', 'Practice'], ['/leaderboard', 'Leaderboard'], ['/progress', 'Progress'], ['/pitch', 'Pitch'], ['/settings', 'Settings'],
+  ['/', 'Practice'], ['/learn', 'Learn'], ['/leaderboard', 'Leaderboard'], ['/progress', 'Progress'], ['/pitch', 'Pitch'], ['/settings', 'Settings'],
 ] as const;
 
 export function Nav() {
