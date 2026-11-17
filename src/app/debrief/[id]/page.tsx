@@ -114,7 +114,7 @@ export default function Debrief({ params }: { params: Promise<{ id: string }> })
           </div>
         </div>
 
-        <div className="grid" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
+        <div className="grid kpis" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
           <div className="card kpi"><b style={{ color: 'var(--accent)', fontSize: 30 }}>{f.score.composite.toFixed(1)}</b><span>Composite score</span></div>
           {([['Return', f.score.return, w.return, fmtPct(f.ret)], ['Sortino', f.score.sortino, w.sortino, f.sortino.toFixed(2)], ['Drawdown', f.score.drawdown, w.drawdown, fmtPct(-f.maxDD, 1)], ['Mandate', f.score.mandate, w.mandate, `${f.penalisedTicks} penalty ticks`]] as const).map(([l, s, wt, raw]) => (
             <div key={l} className="card kpi"><b>{s.toFixed(0)}<span className="dim" style={{ fontSize: 12 }}> /100 × {(wt * 100).toFixed(0)}%</span></b><span>{l}: {raw}</span>

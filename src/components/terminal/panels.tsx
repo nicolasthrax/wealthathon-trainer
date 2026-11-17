@@ -21,7 +21,7 @@ export function NewsFeed({ runner, disguise, onPick }: { runner: SessionRunner; 
   const landed = runner.scenario.events.filter((e) => runner.path.eventTicks[e.id] <= tick).sort((a, b) => runner.path.eventTicks[b.id] - runner.path.eventTicks[a.id]);
   const total = runner.scenario.events.length;
   return (
-    <section className="pan">
+    <section className="pan p-news">
       <header><b>News</b><span>{landed.length}/{total}</span><span className="sp" /><span>newest first</span></header>
       <div className="sc">
         {!landed.length && <div className="news dim">Waiting for the first headline… Watch this feed: it flashes when news lands.</div>}
@@ -83,7 +83,7 @@ export function Watchlist({ runner, selected, onSelect }: { runner: SessionRunne
     );
   }
   return (
-    <section className="pan">
+    <section className="pan p-watch">
       <header><b>Quotes</b><span className="sp" /><span><kbd>↑</kbd><kbd>↓</kbd> select</span></header>
       <div className="sc">
         <table className="q">
@@ -153,13 +153,13 @@ export function PriceChart({ runner, assetId, disguise }: { runner: SessionRunne
   const p = runner.path.prices[assetId];
   const chg = p ? p[runner.tick] / p[0] - 1 : 0;
   return (
-    <section className="pan" style={{ minHeight: 0 }}>
+    <section className="pan p-chart" style={{ minHeight: 0 }}>
       <header>
-        <b>{a?.ticker}</b><span style={{ textTransform: 'none', letterSpacing: 0 }}>{a?.name}</span>
+        <b>{a?.ticker}</b><span className="nm" style={{ textTransform: 'none', letterSpacing: 0 }}>{a?.name}</span>
         <span className="num" style={{ color: 'var(--text)' }}>{p && fmtPx(p[runner.tick], a.decimals)}</span>
         <span className={`num ${cls(chg)}`}>{fmtPct(chg)}</span>
         <span className="sp" />
-        <span style={{ textTransform: 'none', letterSpacing: 0 }}>
+        <span className="ld" style={{ textTransform: 'none', letterSpacing: 0 }}>
           {Object.entries(a?.loadings ?? {}).filter(([, v]) => Math.abs(v) >= 0.3).map(([k, v]) => `${k} ${v > 0 ? '+' : ''}${v}`).join(' · ')}
         </span>
       </header>
@@ -177,7 +177,7 @@ export function Blotter({ runner, onSelect, onFlatten, onCancel, names }: { runn
   const ids = Object.keys(runner.pos);
   const unreal = ids.reduce((s, id) => s + runner.pos[id].qty * (runner.price(id) - runner.pos[id].avg), 0);
   return (
-    <section className="pan">
+    <section className="pan p-book">
       <header>
         <button className={tab === 'pos' ? 'on' : ''} onClick={() => setTab('pos')}>Positions {ids.length}</button>
         <button className={tab === 'ord' ? 'on' : ''} onClick={() => setTab('ord')}>Working {working.length}</button>
@@ -254,7 +254,7 @@ export const RiskPanel = memo(function RiskPanel({ runner }: { runner: SessionRu
   const m = runner.metrics;
   const grace = runner.rules.mandate.breachGraceTicks;
   return (
-    <section className="pan">
+    <section className="pan p-risk">
       <header><b>Risk</b><span className="sp" />{m.marginCall && <span className="banner">MARGIN CALL</span>}</header>
       <div className="risk">
         <div className="kv">

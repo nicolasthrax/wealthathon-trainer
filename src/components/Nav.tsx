@@ -28,19 +28,21 @@ export function Nav() {
   return (
     <nav className="nav">
       <span className="brand">WEALTHATHON TRAINER</span>
-      {LINKS.map(([href, label]) => (
-        <Link key={href} href={href} className={(href === '/' ? path === '/' : path.startsWith(href)) ? 'on' : ''}>{label}</Link>
-      ))}
+      <div className="links">
+        {LINKS.map(([href, label]) => (
+          <Link key={href} href={href} className={(href === '/' ? path === '/' : path.startsWith(href)) ? 'on' : ''}>{label}</Link>
+        ))}
+      </div>
       <span className="sp" />
       {others.map((p) => {
         const o = here.find((u) => u.userId === p.id);
         return (
-          <span key={p.id} className="small dim" title={o ? `${p.display_name} is ${o.where}` : `${p.display_name} is offline`}>
-            <span className={`dot ${o ? 'on' : ''}`} />{p.display_name}{o ? <span style={{ opacity: 0.7 }}> · {o.where}</span> : <span style={{ opacity: 0.7 }}> · offline</span>}
+          <span key={p.id} className="small dim who" title={o ? `${p.display_name} is ${o.where}` : `${p.display_name} is offline`}>
+            <span className={`dot ${o ? 'on' : ''}`} />{p.display_name}{o ? <span className="where" style={{ opacity: 0.7 }}> · {o.where}</span> : <span style={{ opacity: 0.7 }}> · offline</span>}
           </span>
         );
       })}
-      <span className="small dim" title="AI worker on your Mac (scenario generator, coach, pitch judge)">
+      <span className="small dim worker" title="AI worker on your Mac (scenario generator, coach, pitch judge)">
         <span className={`dot ${online ? 'on' : online === false ? 'off' : ''}`} />
         {store.kind === 'local' ? 'Offline mode' : online ? 'AI worker online' : 'AI worker offline'}
       </span>

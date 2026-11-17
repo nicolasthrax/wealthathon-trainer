@@ -65,7 +65,7 @@ export function Briefing({ runner, title, storyline, disguise, onStart, shared }
         <div className="top" style={{ height: 46 }}>
           <span className="ttl">BRIEFING · {title}</span>
           <div className="stat clock"><span>Clock starts in</span><b className={left < 30 ? 'amber' : ''}>{fmtClock(left)}</b></div>
-          <span className="dim small">Read the client, plan your opening allocation. Unallocated money stays in cash (earns nothing; HKDMM earns the money-market rate).</span>
+          <span className="dim small m-hide">Read the client, plan your opening allocation. Unallocated money stays in cash (earns nothing; HKDMM earns the money-market rate).</span>
           <span style={{ flex: 1 }} />
           {shared && <span className="small">Team: <b>{shared.peers.join(' · ') || 'waiting for your team-mate…'}</b>{shared.lastEditBy ? <span className="dim"> · last edit by {shared.lastEditBy}</span> : null}</span>}
           <button className="primary" onClick={start}>Start the clock now ▶</button>

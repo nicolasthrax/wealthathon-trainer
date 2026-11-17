@@ -109,6 +109,15 @@ Build log for the BOCHK x HKU Wealthathon practice app. Newest entries are at th
 - Signing out leaves the channel at once; closing the tab drops off within a few seconds.
 - Verified with two browsers: online on sign-in, page label follows navigation, offline on sign-out.
 
+### 13. Mobile layout
+- Everything below 820px wide switches to a phone layout; desktop is unchanged.
+- **Trading terminal:** a bottom tab bar (Trade · News · Positions · Risk) shows one section at a time. Trade = chart, order ticket, quotes. The News tab shows a badge with unread headlines; Risk shows "!" during a breach or margin call. Tapping an asset button on a headline jumps to Trade with that asset selected.
+- Top bar keeps time left, NAV, P&L, return, score and the buttons; Sim date, Sortino and Max DD move to the Risk tab. Keyboard hints are hidden.
+- Bigger touch targets (rows, presets, Buy/Sell), and inputs use 16px text so iOS doesn't zoom in.
+- **Briefing:** one scrolling column: client, then opening allocation and mandate check, then background and rules.
+- **Other pages:** multi-column grids stack; the nav links become a swipeable row; wide tables scroll inside their card.
+- Verified at iPhone 13 size on every page (no page scrolls sideways) and at 1440px (desktop layout unchanged).
+
 ---
 
 ## Fixes and corrections (found during testing)

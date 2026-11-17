@@ -47,6 +47,9 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
   const [type, setType] = useState<OrderType>('market');
   const [limitPx, setLimitPx] = useState<string>('');
   const [paused, setPaused] = useState(false);
+  /** Phone layout only: which section fills the screen. */
+  const [mtab, setMtab] = useState<'trade' | 'news' | 'book' | 'risk'>('trade');
+  const [seenNews, setSeenNews] = useState(0);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const clock = useRef({ elapsed: initialElapsedMs, last: 0, paused: false });
   const clockEl = useRef<HTMLElement>(null);
@@ -173,26 +176,29 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
   const presets = runner.rules.orders.sizePresetsPctNav;
   const notional = qtyNum * (type === 'limit' ? lim : px);
   const posQty = runner.qty(selected);
+  const landedCount = runner.scenario.events.filter((e) => runner.path.eventTicks[e.id] <= runner.tick).length;
+  const unread = mtab === 'news' ? 0 : landedCount - seenNews;
+  const goTab = (k: typeof mtab) => { if (k === 'news' || mtab === 'news') setSeenNews(landedCount); setMtab(k); };
 
   return (
-    <div className="term">
+    <div className="term" data-mtab={mtab}>
       <div className="top">
-        <span className="ttl" title={title}>{title}</span>
+        <span className="ttl m-hide" title={title}>{title}</span>
         <div className="stat clock"><span>Time left</span><b ref={clockEl}>{fmtClock(N * secondsPerTick - initialElapsedMs / 1000)}</b></div>
-        <div className="stat"><span>Sim date</span><b>{tickLabel(runner.tick, runner.rules, runner.scenario, disguise)}</b></div>
-        <div className="prog"><div className="bar"><i style={{ width: `${progress * 100}%` }} /></div></div>
+        <div className="stat m-hide"><span>Sim date</span><b>{tickLabel(runner.tick, runner.rules, runner.scenario, disguise)}</b></div>
+        <div className="prog m-hide"><div className="bar"><i style={{ width: `${progress * 100}%` }} /></div></div>
         <div className="stat"><span>NAV (HKD)</span><b>{fmtMoney(m.equity)}</b></div>
         <div className="stat"><span>P&amp;L</span><b className={cls(m.pnl)}>{fmtCompact(m.pnl)}</b></div>
         <div className="stat"><span>Return</span><b className={cls(m.ret)}>{fmtPct(m.ret)}</b></div>
-        <div className="stat"><span>Sortino</span><b>{m.sortino.toFixed(2)}</b></div>
-        <div className="stat"><span>Max DD</span><b className={m.maxDD > 0.1 ? 'down' : ''}>{fmtPct(-m.maxDD, 1)}</b></div>
+        <div className="stat m-hide"><span>Sortino</span><b>{m.sortino.toFixed(2)}</b></div>
+        <div className="stat m-hide"><span>Max DD</span><b className={m.maxDD > 0.1 ? 'down' : ''}>{fmtPct(-m.maxDD, 1)}</b></div>
         <div className="stat score" title={`Return ${m.score.return.toFixed(0)} · Sortino ${m.score.sortino.toFixed(0)} · Drawdown ${m.score.drawdown.toFixed(0)} · Mandate ${m.score.mandate.toFixed(0)}`}>
           <span>Score</span><b>{m.score.composite.toFixed(1)}</b>
         </div>
-        {!team && <span className="small dim" style={{ fontSize: 10 }}>R {m.score.return.toFixed(0)} · S {m.score.sortino.toFixed(0)} · D {m.score.drawdown.toFixed(0)} · M {m.score.mandate.toFixed(0)}</span>}
+        {!team && <span className="small dim m-hide" style={{ fontSize: 10 }}>R {m.score.return.toFixed(0)} · S {m.score.sortino.toFixed(0)} · D {m.score.drawdown.toFixed(0)} · M {m.score.mandate.toFixed(0)}</span>}
         {m.mandate.some((c) => !c.ok) && <span className="banner" style={{ background: '#3d2f0c', color: 'var(--amber)' }}>MANDATE BREACH</span>}
         {m.marginCall && <span className="banner">MARGIN CALL</span>}
-        <span style={{ flex: 1 }} />
+        <span className="m-hide" style={{ flex: 1 }} />
         {pauseAllowed && <button onClick={() => setPaused((p) => !p)}>{paused ? '▶ Resume' : '❚❚ Pause'}</button>}
         {team && (() => {
           const c = liveContribution(runner);
@@ -214,7 +220,7 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
 
       <div className="body">
         <div className="col" style={{ gridTemplateRows: 'minmax(0, 1fr)' }}>
-          <NewsFeed runner={runner} disguise={disguise} onPick={select} />
+          <NewsFeed runner={runner} disguise={disguise} onPick={(id) => { select(id); if (mtab === 'news') goTab('trade'); }} />
         </div>
         <div className="col mid">
           <PriceChart runner={runner} assetId={selected} disguise={disguise} />
@@ -224,7 +230,7 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
           </div>
         </div>
         <div className="col right">
-          <section className="pan">
+          <section className="pan p-ticket">
             <header><b>Order ticket</b><span>{a?.ticker}</span><span className="sp" /><span>Pos <b className={cls(posQty)}>{fmtMoney(posQty)}</b></span></header>
             <div className="ticket">
               <div className="r">
@@ -261,6 +267,15 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
           <div />
         </div>
       </div>
+
+      <nav className="mtabs" aria-label="Terminal sections">
+        {([['trade', 'Trade'], ['news', 'News'], ['book', 'Positions'], ['risk', 'Risk']] as const).map(([k, l]) => (
+          <button key={k} className={mtab === k ? 'on' : ''} onClick={() => goTab(k)}>
+            {l}{k === 'news' && unread > 0 ? <span className="badge">{unread}</span> : null}
+            {k === 'risk' && (m.marginCall || m.mandate.some((c) => !c.ok)) ? <span className="badge">!</span> : null}
+          </button>
+        ))}
+      </nav>
 
       <div className="hint">
         <span><kbd>B</kbd>/<kbd>S</kbd> side</span><span><kbd>1</kbd>-<kbd>{presets.length}</kbd> size {presets.join('/')}% NAV</span><span><kbd>⏎</kbd> send</span>
