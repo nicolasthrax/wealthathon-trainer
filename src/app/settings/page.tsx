@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import { Nav } from '@/components/Nav';
 import { supabase, useStore } from '@/lib/store';
 import { EVENT_RULES, type RuleOverrides } from '@config/event-rules';
-import { fmtMoney } from '@/lib/format';
 
 export default function Settings() {
   const { store, ready } = useStore();
@@ -40,8 +39,7 @@ export default function Settings() {
         </div>
         <div className="card grid">
           <h2>Event rules</h2>
-          <label className="f">Starting capital (HKD) · file default {fmtMoney(EVENT_RULES.startingCapital)}
-            <input inputMode="numeric" value={o.startingCapital ?? ''} placeholder={String(EVENT_RULES.startingCapital)} onChange={(e) => setO({ ...o, startingCapital: Number(e.target.value.replace(/\D/g, '')) || undefined })} /></label>
+          <p className="small dim">Practice sessions start with HKD 20,000,000. Previous sessions retain their saved rules.</p>
           <label className="row"><input type="checkbox" checked={o.costsEnabled ?? EVENT_RULES.costs.enabled} onChange={(e) => setO({ ...o, costsEnabled: e.target.checked })} />
             Transaction costs ({EVENT_RULES.costs.commissionBps}bp commission + per-class spreads)</label>
           <label className="f">Briefing phase (seconds) · file default {EVENT_RULES.clock.briefingSeconds}

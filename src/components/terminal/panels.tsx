@@ -66,6 +66,7 @@ export function NewsFeed({ runner, disguise, onPick, hint }: { runner: SessionRu
 // ── Watchlist ────────────────────────────────────────────────────────────────
 export function Watchlist({ runner, selected, onSelect }: { runner: SessionRunner; selected: string; onSelect: (id: string) => void }) {
   const [tab, setTab] = useState<'equity' | 'bond' | 'fx' | 'commodity' | 'cash'>('equity');
+  useEffect(() => { const asset = runner.assetById[selected]; if (asset) setTab(asset.cls); }, [selected, runner]);
   const tabs = [['equity','1. EQUITY'],['bond','2. BOND'],['fx','3. FX'],['commodity','4. CMDTY'],['cash','CASH']] as const;
   return <section className="pan p-watch"><header>{tabs.map(([id,label]) => <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>{label}</button>)}</header><div className="sc"><table className="q"><thead><tr><th>Ticker</th><th>Ref price</th><th>% Chg</th><th>Type</th></tr></thead><tbody>
     {runner.rules.assets.filter(a => a.cls === tab && runner.path.prices[a.id]).map(a => { const p = runner.price(a.id), change = percentChange(p, a.startPrice); return <tr key={a.id} className={`a${selected === a.id ? ' sel' : ''}`} onClick={() => onSelect(a.id)} title={a.name}><td className="tk">{a.ticker}</td><td>{fmtPx(p,a.decimals)}</td><td className={cls(change)}>{fmtPct(change,2)}</td><td>{CLASS_LABEL[a.cls]}</td></tr>; })}

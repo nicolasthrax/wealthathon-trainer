@@ -7,6 +7,7 @@ import { currentRules, useStore, type Profile, type ScenarioMeta, type ScoreRow,
 import { EVENT_RULES } from '@config/event-rules';
 import type { Difficulty } from '@engine/types';
 import { fmtPct } from '@/lib/format';
+import { PRACTICE_MINUTES, practiceRules } from '@/lib/practice';
 import { usePresence } from '@/lib/presence';
 
 const DIFFS: Difficulty[] = ['easy', 'medium', 'hard'];
@@ -19,7 +20,6 @@ export default function Home() {
   const [mode, setMode] = useState<'synthetic' | 'historical'>('synthetic');
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
   const [scenarioId, setScenarioId] = useState<string>('random');
-  const [minutes, setMinutes] = useState<number>(EVENT_RULES.difficulty.medium.sessionMinutes);
   const [disguise, setDisguise] = useState(true);
   const [hints, setHints] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -37,7 +37,6 @@ export default function Home() {
     const iv = setInterval(loadInvites, 8000);
     return () => clearInterval(iv);
   }, [store, ready]);
-  useEffect(() => { setMinutes(EVENT_RULES.difficulty[difficulty].sessionMinutes); }, [difficulty]);
 
   const options = useMemo(() => scenarios.filter((s) => s.source === mode && (mode === 'historical' || s.difficulty === difficulty)), [scenarios, mode, difficulty]);
   const poolCount = (d: Difficulty) => scenarios.filter((s) => s.source === 'synthetic' && s.difficulty === d && s.used_count === 0).length;
@@ -56,11 +55,11 @@ export default function Home() {
       }
       const clients = await store.listClients();
       const client = clients[Math.floor(Math.random() * clients.length)];
-      const rules = await currentRules(store);
+      const rules = practiceRules(await currentRules(store));
       const seed = Math.random().toString(36).slice(2, 10);
       const row = await store.createSession({
         scenario: sc, client, seed, difficulty: m === 'historical' ? (quick ? 'medium' : difficulty) : sc.difficulty,
-        disguise: m === 'historical' ? disguise : false, session_minutes: quick ? EVENT_RULES.difficulty.medium.sessionMinutes : minutes, rules, team, hints: !quick && hints,
+        disguise: m === 'historical' ? disguise : false, session_minutes: PRACTICE_MINUTES, rules, team, hints: !quick && hints,
       });
       router.push(`/play/${row.id}`);
     } catch (e) { setErr((e as Error).message); setBusy(false); }
@@ -81,7 +80,7 @@ export default function Home() {
           <div className="card">
             <h1>Practice session</h1>
             <p className="dim" style={{ marginTop: 0 }}>
-              One simulated year in {EVENT_RULES.clock.defaultSessionMinutes} minutes. Read the client brief, set an opening allocation, then trade the news.
+              One simulated year across four continuous 15-minute quarters (60 minutes total), starting with HKD 20 million. Read the client brief, set an opening allocation, then trade the news.
               Score = {Math.round(EVENT_RULES.scoring.weights.return * 100)}% return, {Math.round(EVENT_RULES.scoring.weights.sortino * 100)}% Sortino,{' '}
               {Math.round(EVENT_RULES.scoring.weights.drawdown * 100)}% drawdown, {Math.round(EVENT_RULES.scoring.weights.mandate * 100)}% mandate compliance.
             </p>
@@ -89,7 +88,7 @@ export default function Home() {
               <button className="primary" disabled={busy || !scenarios.length} onClick={() => start(true)} style={{ padding: '10px 18px', fontSize: 15 }}>
                 ▶ Quick start: Medium, random client
               </button>
-              <span className="small dim">Event-like pace. Same format as the Preliminary Round.</span>
+              <span className="small dim">Four quarters · 15 minutes each · HKD 20M starting capital.</span>
             </div>
             <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div className="f" role="group" aria-label="Mode">Mode
@@ -109,9 +108,7 @@ export default function Home() {
                   {options.map((s) => <option key={s.id} value={s.id}>{mode === 'historical' && disguise ? s.disguisedTitle ?? 'Hidden episode' : s.title}{s.used_count ? ` · played ${s.used_count}×` : ''}</option>)}
                 </select>
               </label>
-              <label className="f">Session length: {minutes} min (1 simulated year)
-                <input type="range" min={EVENT_RULES.clock.minSessionMinutes} max={EVENT_RULES.clock.maxSessionMinutes} value={minutes} onChange={(e) => setMinutes(+e.target.value)} />
-              </label>
+              <div className="f">Session format <span>4 quarters × 15 minutes · HKD 20M</span></div>
               {mode === 'historical' && (
                 <label className="row small" style={{ gridColumn: '1 / 3' }}>
                   <input type="checkbox" checked={disguise} onChange={(e) => setDisguise(e.target.checked)} />

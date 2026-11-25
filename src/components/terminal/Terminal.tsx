@@ -4,6 +4,7 @@ import type { SessionRunner } from '@engine/runner';
 import type { NewsEvent, Order, OrderInput, Side, OrderType } from '@engine/types';
 import { liveContribution } from '@engine/players';
 import { Blotter, NewsFeed, PriceChart, RiskPanel, Watchlist } from './panels';
+import { practiceClock } from '@/lib/practice';
 import { accountSummary, positionRows, commissionEstimate } from './helpers';
 import { cls, fmtClock, fmtCompact, fmtMoney, fmtPct, fmtPx } from '@/lib/format';
 
@@ -26,6 +27,7 @@ interface Props {
   overlay?: ReactNode;
   /** Hint mode: extra content under each headline (playbook card). */
   hint?: (e: NewsEvent) => ReactNode;
+  practiceQuarters?: boolean;
   hideEnd?: boolean;
   abandonLabel?: string;
 }
@@ -49,7 +51,7 @@ export interface TeamProps {
 
 type Toast = { id: number; text: string; ok?: boolean };
 
-export function Terminal({ runner, title, secondsPerTick, disguise, initialElapsedMs, onProgress, onFinish, onAbandon, team, lesson, overlay, hint, hideEnd, abandonLabel }: Props) {
+export function Terminal({ runner, title, secondsPerTick, disguise, initialElapsedMs, onProgress, onFinish, onAbandon, team, lesson, overlay, hint, practiceQuarters = false, hideEnd, abandonLabel }: Props) {
   const [version, bump] = useReducer((x: number) => x + 1, 0);
   const [selected, setSelected] = useState<string>(() => runner.path.assets.includes('HSI') ? 'HSI' : runner.path.assets[0]);
   const [side, setSide] = useState<Side>('buy');
@@ -63,6 +65,7 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
   const [toasts, setToasts] = useState<Toast[]>([]);
   const clock = useRef({ elapsed: initialElapsedMs, last: 0, paused: false });
   const clockEl = useRef<HTMLElement>(null);
+  const quarterEl = useRef<HTMLElement>(null);
   const finished = useRef(false);
   const lastMarginCall = useRef(false);
   const toastSeq = useRef(0);
@@ -93,6 +96,7 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
       if (tm) tm.advance(target); else while (runner.tick < target && !runner.finished) runner.step();
       const stepped = runner.tick !== before;
       if (clockEl.current) clockEl.current.textContent = fmtClock(N * secondsPerTick - c.elapsed / 1000);
+      if (quarterEl.current && practiceQuarters) { const q = practiceClock(c.elapsed / 1000); quarterEl.current.textContent = `Q${q.quarter} · ${fmtClock(q.quarterRemaining)}`; }
       if (stepped) {
         bump();
         if (runner.metrics.marginCall && !lastMarginCall.current) toast('MARGIN CALL: reduce exposure now or positions will be liquidated');
@@ -103,7 +107,7 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
       if (runner.finished && !finished.current) { finished.current = true; onFinish(); }
     }, 100);
     return () => clearInterval(iv);
-  }, [runner, secondsPerTick, N, onFinish, onProgress, toast]);
+  }, [runner, secondsPerTick, N, onFinish, onProgress, toast, practiceQuarters]);
 
   useEffect(() => { clock.current.paused = paused; }, [paused]);
   useEffect(() => { if (type === 'limit' && !limitPx) setLimitPx(runner.price(selected).toFixed(runner.assetById[selected].decimals)); }, [type, limitPx, selected, runner]);
@@ -200,14 +204,15 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
     <div className="term" data-mtab={mtab}>
       <div className="top">
         <span className="ttl m-hide" title={title}>{title}</span>
-        <div className="stat clock"><span>Time left</span><b ref={clockEl}>{fmtClock(N * secondsPerTick - initialElapsedMs / 1000)}</b></div>
-        <div className="stat" title="Long positions only; shorts excluded"><span>Value of shares owned</span><b>{fmtCompact(summary.owned)}</b></div>
-        <div className="stat"><span>Margin requirement</span><b>{fmtCompact(m.marginUsed)}</b></div>
-        <div className="stat"><span>Realized P+L</span><b className={cls(summary.realized)}>{fmtCompact(summary.realized)}</b></div>
-        <div className="stat"><span>Unrealized P+L</span><b className={cls(summary.unrealized)}>{fmtCompact(summary.unrealized)}</b></div>
-        <div className="stat"><span>Commission Paid</span><b>{fmtCompact(summary.commission)}</b></div>
-        <div className="stat"><span>Available cash</span><b>{fmtCompact(m.cash)}</b></div>
-        <div className="stat"><span>Total PnL</span><b className={cls(m.pnl)}>{fmtCompact(m.pnl)}</b></div>
+        <div className="stat clock"><span>Session left</span><b ref={clockEl}>{fmtClock(N * secondsPerTick - initialElapsedMs / 1000)}</b></div>
+        {practiceQuarters && <div className="stat clock"><span>Quarter · time left</span><b ref={quarterEl}>{(() => { const q = practiceClock(initialElapsedMs / 1000); return `Q${q.quarter} · ${fmtClock(q.quarterRemaining)}`; })()}</b></div>}
+        <div className="stat" title="Long positions only; shorts excluded"><span>Value of shares owned</span><b>{fmtMoney(summary.owned)}</b></div>
+        <div className="stat"><span>Margin requirement</span><b>{fmtMoney(m.marginUsed)}</b></div>
+        <div className="stat"><span>Realized P+L</span><b className={cls(summary.realized)}>{fmtMoney(summary.realized)}</b></div>
+        <div className="stat"><span>Unrealized P+L</span><b className={cls(summary.unrealized)}>{fmtMoney(summary.unrealized)}</b></div>
+        <div className="stat"><span>Commission Paid</span><b>{fmtMoney(summary.commission)}</b></div>
+        <div className="stat"><span>Available cash</span><b>{fmtMoney(m.cash)}</b></div>
+        <div className="stat"><span>Total PnL</span><b className={cls(m.pnl)}>{fmtMoney(m.pnl)}</b></div>
         <div className="stat score" title={`Return ${m.score.return.toFixed(0)} · Sortino ${m.score.sortino.toFixed(0)} · Drawdown ${m.score.drawdown.toFixed(0)} · Mandate ${m.score.mandate.toFixed(0)}`}>
           <span>Score</span><b>{m.score.composite.toFixed(1)}</b>
         </div>

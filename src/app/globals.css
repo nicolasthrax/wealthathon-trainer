@@ -303,3 +303,10 @@ table.q button { padding: 0 5px; font-size: 9px; height: 14px; line-height: 12px
 .term .exchange-value { color:var(--dim); display:flex; justify-content:space-between; border:1px solid var(--line); padding:4px; }
 .term .exchange-value b { color:var(--text); font-family:var(--mono); }
 @media (max-width:820px) { .term .top { max-height: 32vh; overflow:auto; } .term .p-chart > header { overflow-x:auto; } }
+@media (min-width: 821px) {
+  /* Ticket and risk share the left lower region without covering each other. */
+  .term .body .right { display: grid; grid-column: 1; grid-row: 2; grid-template-rows: minmax(0, 2fr) minmax(0, 1fr); min-height: 0; }
+  .term .right .p-ticket { grid-column: auto; grid-row: auto; padding-bottom: 0; overflow-y: auto; }
+  .term .right .p-risk { grid-column: auto; grid-row: auto; align-self: stretch; max-height: none; overflow-y: auto; }
+  .term .right > div:last-child { display: none; }
+}
