@@ -1,11 +1,11 @@
 'use client';
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
-import { createChart, AreaSeries, createSeriesMarkers, type IChartApi, type ISeriesApi, type ISeriesMarkersPluginApi, type SeriesMarker, type Time, type UTCTimestamp } from 'lightweight-charts';
+import { createChart, LineSeries, CandlestickSeries, LineStyle, createSeriesMarkers, type ISeriesApi, type ISeriesMarkersPluginApi, type SeriesMarker, type Time, type UTCTimestamp } from 'lightweight-charts';
 import type { SessionRunner } from '@engine/runner';
 import type { AssetDef, MandateCheck, NewsEvent } from '@engine/types';
 import { tickLabel } from '@engine/path';
 import { CLASS_LABEL } from '@engine/mandate';
-import { Sparkline } from '../Sparkline';
+import { percentChange, positionRows, candles, sma } from './helpers';
 import { cls, fmtCompact, fmtMoney, fmtPct, fmtPx, SRC_LABEL, CAT_LABEL } from '@/lib/format';
 
 const T0 = 1_700_000_000;
@@ -17,15 +17,17 @@ export function headlineOf(e: NewsEvent, disguise: boolean) { return disguise &&
 // ── News feed ────────────────────────────────────────────────────────────────
 export function NewsFeed({ runner, disguise, onPick, hint }: { runner: SessionRunner; disguise: boolean; onPick?: (assetId: string) => void; hint?: (e: NewsEvent) => ReactNode }) {
   const [open, setOpen] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
   const tick = runner.tick;
   const landed = runner.scenario.events.filter((e) => runner.path.eventTicks[e.id] <= tick).sort((a, b) => runner.path.eventTicks[b.id] - runner.path.eventTicks[a.id]);
   const total = runner.scenario.events.length;
   return (
     <section className="pan p-news">
       <header><b>News</b><span>{landed.length}/{total}</span><span className="sp" /><span>newest first</span></header>
+      <input data-nohotkeys aria-label="Search news" placeholder="Search keywords" value={query} onChange={e => setQuery(e.target.value)} />
       <div className="sc">
         {!landed.length && <div className="news dim">Waiting for the first headline… Watch this feed: it flashes when news lands.</div>}
-        {landed.map((e, i) => {
+        {landed.filter(e => `${headlineOf(e, disguise)} ${e.body} ${Object.keys(e.assetShocks ?? {}).map(id => runner.assetById[id]?.ticker ?? id).join(' ')}`.toLowerCase().includes(query.toLowerCase())).map((e, i) => {
           const t = runner.path.eventTicks[e.id];
           const fresh = tick - t <= 2;
           const expanded = open === e.id || (i === 0 && open === null);
@@ -63,163 +65,78 @@ export function NewsFeed({ runner, disguise, onPick, hint }: { runner: SessionRu
 
 // ── Watchlist ────────────────────────────────────────────────────────────────
 export function Watchlist({ runner, selected, onSelect }: { runner: SessionRunner; selected: string; onSelect: (id: string) => void }) {
-  const t = runner.tick;
-  let lastGroup = '';
-  const rows: React.ReactNode[] = [];
-  for (const a of runner.rules.assets) {
-    if (!runner.path.prices[a.id]) continue;
-    if (a.group !== lastGroup) { lastGroup = a.group; rows.push(<tr key={`g${a.group}`} className="g"><td colSpan={5}>{a.group}</td></tr>); }
-    const p = runner.path.prices[a.id];
-    const chg = p[t] / p[0] - 1;
-    const d1 = t >= 5 ? p[t] / p[t - 5] - 1 : 0;
-    const q = runner.qty(a.id);
-    rows.push(
-      <tr key={a.id} className={`a${selected === a.id ? ' sel' : ''}`} onClick={() => onSelect(a.id)} title={a.name}>
-        <td><span className="tk">{a.ticker}</span>{q !== 0 && <span className={q > 0 ? 'up' : 'down'} style={{ marginLeft: 4 }}>{q > 0 ? '▲' : '▼'}</span>}</td>
-        <td>{fmtPx(p[t], a.decimals)}</td>
-        <td className={cls(d1)}>{d1 ? fmtPct(d1, 2) : ''}</td>
-        <td className={cls(chg)}>{fmtPct(chg, 1)}</td>
-        <td><Sparkline data={p} from={Math.max(0, t - 150)} to={t} /></td>
-      </tr>,
-    );
-  }
-  return (
-    <section className="pan p-watch">
-      <header><b>Quotes</b><span className="sp" /><span><kbd>↑</kbd><kbd>↓</kbd> select</span></header>
-      <div className="sc">
-        <table className="q">
-          <thead><tr><th>Asset</th><th>Last</th><th>Δ5</th><th>Chg</th><th>Trend</th></tr></thead>
-          <tbody>{rows}</tbody>
-        </table>
-      </div>
-    </section>
-  );
+  const [tab, setTab] = useState<'equity' | 'bond' | 'fx' | 'commodity' | 'cash'>('equity');
+  const tabs = [['equity','1. EQUITY'],['bond','2. BOND'],['fx','3. FX'],['commodity','4. CMDTY'],['cash','CASH']] as const;
+  return <section className="pan p-watch"><header>{tabs.map(([id,label]) => <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>{label}</button>)}</header><div className="sc"><table className="q"><thead><tr><th>Ticker</th><th>Ref price</th><th>% Chg</th><th>Type</th></tr></thead><tbody>
+    {runner.rules.assets.filter(a => a.cls === tab && runner.path.prices[a.id]).map(a => { const p = runner.price(a.id), change = percentChange(p, a.startPrice); return <tr key={a.id} className={`a${selected === a.id ? ' sel' : ''}`} onClick={() => onSelect(a.id)} title={a.name}><td className="tk">{a.ticker}</td><td>{fmtPx(p,a.decimals)}</td><td className={cls(change)}>{fmtPct(change,2)}</td><td>{CLASS_LABEL[a.cls]}</td></tr>; })}
+  </tbody></table></div></section>;
 }
 
 // ── Main chart ───────────────────────────────────────────────────────────────
-export function PriceChart({ runner, assetId, disguise }: { runner: SessionRunner; assetId: string; disguise: boolean }) {
+export function PriceChart({ runner, assetId, disguise, secondsPerTick }: { runner: SessionRunner; assetId: string; disguise: boolean; secondsPerTick: number }) {
   const el = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<IChartApi | null>(null);
-  const seriesRef = useRef<ISeriesApi<'Area'> | null>(null);
-  const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
-  const shown = useRef({ asset: '', tick: -1, events: -1, fills: -1 });
+  const [mode, setMode] = useState<'line' | 'candle'>('line');
+  const [average, setAverage] = useState(false);
+  const [windowMinutes, setWindowMinutes] = useState<number | null>(null);
   const a = runner.assetById[assetId];
-
   useEffect(() => {
-    if (!el.current) return;
+    if (!el.current || !a) return;
     const lbl = (t: Time) => tickLabel(((t as number) - T0) / 60, runner.rules, runner.scenario, disguise);
-    const chart = createChart(el.current, {
-      autoSize: true,
-      layout: { background: { color: 'transparent' }, textColor: '#7a889c', fontSize: 10, attributionLogo: false },
-      grid: { vertLines: { color: '#111823' }, horzLines: { color: '#111823' } },
-      rightPriceScale: { borderColor: '#1d2633' },
-      timeScale: { borderColor: '#1d2633', tickMarkFormatter: lbl, rightOffset: 6 },
-      localization: { timeFormatter: lbl },
-      crosshair: { horzLine: { color: '#4b5869' }, vertLine: { color: '#4b5869' } },
-    });
-    const series = chart.addSeries(AreaSeries, { lineColor: '#5cc4ff', topColor: 'rgba(92,196,255,0.25)', bottomColor: 'rgba(92,196,255,0)', lineWidth: 2, priceLineColor: '#5cc4ff' });
-    chartRef.current = chart; seriesRef.current = series;
-    markersRef.current = createSeriesMarkers(series, []);
-    shown.current = { asset: '', tick: -1, events: -1, fills: -1 };
-    return () => { chart.remove(); chartRef.current = null; seriesRef.current = null; };
-  }, [runner.scenario, disguise]); // eslint-disable-line react-hooks/exhaustive-deps -- survives team-mode runner rebuilds
-
-  // Incremental update on each tick (series.update) — full setData only when the asset changes.
-  useEffect(() => {
-    const s = seriesRef.current;
-    if (!s || !a) return;
-    const p = runner.path.prices[assetId];
-    const t = runner.tick, sh = shown.current;
-    s.applyOptions({ priceFormat: { type: 'price', precision: a.decimals, minMove: 1 / 10 ** a.decimals } });
-    if (sh.asset !== assetId || t < sh.tick) {
-      const data = new Array(t + 1);
-      for (let i = 0; i <= t; i++) data[i] = { time: tt(i), value: p[i] };
-      s.setData(data);
-      chartRef.current?.timeScale().fitContent();
-      sh.asset = assetId; sh.events = -1; sh.fills = -1;
-    } else for (let i = sh.tick + 1; i <= t; i++) s.update({ time: tt(i), value: p[i] });
-    sh.tick = t;
-    const landed = runner.scenario.events.filter((e) => runner.path.eventTicks[e.id] <= t);
-    const fills = runner.fills.filter((f) => f.assetId === assetId);
-    if (landed.length !== sh.events || fills.length !== sh.fills) {
-      sh.events = landed.length; sh.fills = fills.length;
-      const ms: SeriesMarker<Time>[] = [
-        ...landed.map((e) => ({ time: tt(runner.path.eventTicks[e.id]) as Time, position: 'aboveBar' as const, shape: 'circle' as const, color: SRC_COLOR[e.source], size: 0.6, id: e.id })),
-        ...fills.map((f) => ({ time: tt(f.tick) as Time, position: f.side === 'buy' ? 'belowBar' as const : 'aboveBar' as const, shape: f.side === 'buy' ? 'arrowUp' as const : 'arrowDown' as const, color: f.side === 'buy' ? '#2bd685' : '#ff5c74', text: f.source === 'liquidation' ? 'LIQ' : '' })),
-      ].sort((x, y) => (x.time as number) - (y.time as number));
-      markersRef.current?.setMarkers(ms);
-    }
-  });
-
-  const p = runner.path.prices[assetId];
-  const chg = p ? p[runner.tick] / p[0] - 1 : 0;
-  return (
-    <section className="pan p-chart" style={{ minHeight: 0 }}>
-      <header>
-        <b>{a?.ticker}</b><span className="nm" style={{ textTransform: 'none', letterSpacing: 0 }}>{a?.name}</span>
-        <span className="num" style={{ color: 'var(--text)' }}>{p && fmtPx(p[runner.tick], a.decimals)}</span>
-        <span className={`num ${cls(chg)}`}>{fmtPct(chg)}</span>
-        <span className="sp" />
-        <span className="ld" style={{ textTransform: 'none', letterSpacing: 0 }}>
-          {Object.entries(a?.loadings ?? {}).filter(([, v]) => Math.abs(v) >= 0.3).map(([k, v]) => `${k} ${v > 0 ? '+' : ''}${v}`).join(' · ')}
-        </span>
-      </header>
-      <div ref={el} style={{ flex: 1, minHeight: 0 }} />
-    </section>
-  );
+    const chart = createChart(el.current, { autoSize: true, layout: { background: { color: 'transparent' }, textColor: '#91aabd', fontSize: 10, attributionLogo: false }, grid: { vertLines: { color: '#17354a' }, horzLines: { color: '#17354a' } }, timeScale: { tickMarkFormatter: lbl }, localization: { timeFormatter: lbl } });
+    const p = runner.path.prices[assetId], t = runner.tick;
+    const bucket = mode === 'candle' ? Math.max(1, Math.ceil((windowMinutes ? windowMinutes * 60 / secondsPerTick : t + 1) / 100)) : 1;
+    const opts = { priceFormat: { type: 'price' as const, precision: a.decimals, minMove: 1 / 10 ** a.decimals } };
+    const series = mode === 'line' ? chart.addSeries(LineSeries, { ...opts, color: '#eabf50', lineWidth: 2 }) : chart.addSeries(CandlestickSeries, { ...opts, upColor: '#2bd685', downColor: '#ff5c74', borderVisible: false, wickUpColor: '#2bd685', wickDownColor: '#ff5c74' });
+    if (mode === 'line') (series as ISeriesApi<'Line'>).setData(Array.from({length:t+1}, (_,i) => ({time:tt(i),value:p[i]})));
+    else (series as ISeriesApi<'Candlestick'>).setData(candles(p,t,bucket).map(c => ({time:tt(c.tick),open:c.open,high:c.high,low:c.low,close:c.close})));
+    const actual = Array.from(p.slice(0,t+1));
+    for (const [label, value] of [['Session high', Math.max(...actual)], ['Session low', Math.min(...actual)]] as const) series.createPriceLine({price:value,color:'#70869b',lineWidth:1,lineStyle:LineStyle.Dashed,axisLabelVisible:true,title:label});
+    if (average) chart.addSeries(LineSeries, {color:'#70c3f3',lineWidth:1,priceLineVisible:false}).setData(sma(p,t,20).map(x => ({time:tt(x.tick),value:x.value})));
+    const markers: SeriesMarker<Time>[] = [
+      ...runner.scenario.events.filter(e => runner.path.eventTicks[e.id] <= t).map(e => ({time:tt(Math.floor(runner.path.eventTicks[e.id]/bucket)*bucket) as Time,position:'aboveBar' as const,shape:'circle' as const,color:SRC_COLOR[e.source],size:0.6,id:e.id})),
+      ...runner.fills.filter(f => f.assetId === assetId && f.tick <= t).map(f => ({time:tt(Math.floor(f.tick/bucket)*bucket) as Time,position:f.side === 'buy' ? 'belowBar' as const : 'aboveBar' as const,shape:f.side === 'buy' ? 'arrowUp' as const : 'arrowDown' as const,color:f.side === 'buy' ? '#2bd685' : '#ff5c74',text:f.source === 'liquidation' ? 'LIQ' : ''}))
+    ].sort((x,y) => (x.time as number)-(y.time as number));
+    createSeriesMarkers(series, markers);
+    if (windowMinutes && t > 0) chart.timeScale().setVisibleRange({from:tt(Math.max(0,t-Math.ceil(windowMinutes*60/secondsPerTick))),to:tt(t)}); else chart.timeScale().fitContent();
+    return () => chart.remove();
+  }, [runner, runner.tick, runner.fills.length, assetId, disguise, mode, average, windowMinutes, secondsPerTick, a]);
+  return <section className="pan p-chart"><header><b>{a?.ticker}</b><span>PRICE</span><button className={mode === 'line' ? 'on' : ''} onClick={() => setMode('line')}>Line</button><button className={mode === 'candle' ? 'on' : ''} onClick={() => setMode('candle')}>Candlestick</button><button className={average ? 'on' : ''} onClick={() => setAverage(!average)}>SMA</button><span className="sp" />{[5,15,30,60,null].map(n => <button key={n ?? 'all'} className={windowMinutes === n ? 'on' : ''} onClick={() => setWindowMinutes(n)}>{n ? `${n}min` : 'All'}</button>)}</header><div ref={el} style={{flex:1,minHeight:0}} /></section>;
 }
 
 // ── Positions / orders / fills ───────────────────────────────────────────────
 export function Blotter({ runner, onSelect, onFlatten, onCancel, names }: { runner: SessionRunner; onSelect: (id: string) => void; onFlatten: (id: string) => void; onCancel: (orderId: string) => void; names?: Record<string, string> }) {
   const who = (orderId: string) => { const pid = runner.orders.find((o) => o.id === orderId)?.participantId; return pid && names ? names[pid] ?? '' : ''; };
-  const [tab, setTab] = useState<'pos' | 'ord' | 'fill'>('pos');
-  const eq = runner.metrics.equity;
+  const [tab, setTab] = useState<'pos' | 'trade'>('pos');
   const working = runner.orders.filter((o) => o.status === 'working');
-  const ids = Object.keys(runner.pos);
-  const unreal = ids.reduce((s, id) => s + runner.pos[id].qty * (runner.price(id) - runner.pos[id].avg), 0);
+  const rows = positionRows(runner.pos, runner.fills, id => runner.price(id));
+  const unreal = rows.reduce((s, row) => s + row.unrealized, 0);
   return (
     <section className="pan p-book">
       <header>
-        <button className={tab === 'pos' ? 'on' : ''} onClick={() => setTab('pos')}>Positions {ids.length}</button>
-        <button className={tab === 'ord' ? 'on' : ''} onClick={() => setTab('ord')}>Working {working.length}</button>
-        <button className={tab === 'fill' ? 'on' : ''} onClick={() => setTab('fill')}>Fills {runner.fills.length}</button>
+        <button className={tab === 'pos' ? 'on' : ''} onClick={() => setTab('pos')}>POSITIONS {rows.length}</button>
+        <button className={tab === 'trade' ? 'on' : ''} onClick={() => setTab('trade')}>TRADE BLOTTER</button>
         <span className="sp" />
         <span>Unrl <b className={cls(unreal)}>{fmtCompact(unreal)}</b></span>
       </header>
       <div className="sc">
         {tab === 'pos' && (
-          <table className="q">
-            <thead><tr><th>Asset</th><th>Qty</th><th>Avg</th><th>Last</th><th>Value</th><th>%NAV</th><th>P&amp;L</th><th></th></tr></thead>
-            <tbody>
-              {ids.map((id) => {
-                const a = runner.assetById[id], p = runner.pos[id], px = runner.price(id), v = p.qty * px, pnl = p.qty * (px - p.avg);
-                return (
-                  <tr key={id} className="a" onClick={() => onSelect(id)}>
-                    <td className="tk">{a.ticker}</td><td className={p.qty > 0 ? 'up' : 'down'}>{fmtMoney(p.qty)}</td>
-                    <td>{fmtPx(p.avg, a.decimals)}</td><td>{fmtPx(px, a.decimals)}</td><td>{fmtCompact(v)}</td>
-                    <td>{eq > 0 ? fmtPct(v / eq, 1, false) : '-'}</td><td className={cls(pnl)}>{fmtCompact(pnl)}</td>
-                    <td><button onClick={(e) => { e.stopPropagation(); onFlatten(id); }} title="Flatten (F)">Flat</button></td>
-                  </tr>
-                );
-              })}
-              <tr><td className="dim">Cash</td><td colSpan={3}></td><td className={cls(runner.cash)}>{fmtCompact(runner.cash)}</td><td>{eq > 0 ? fmtPct(runner.cash / eq, 1, false) : '-'}</td><td colSpan={2}></td></tr>
-            </tbody>
-          </table>
+          <table className="q"><thead><tr><th>Security</th><th>Net pos</th><th>Avg price</th><th>Pos. value ($)</th><th>Unrealised P/L</th><th>Realised P/L</th><th>Net P/L</th><th></th></tr></thead><tbody>
+            {rows.map(r => { const a = runner.assetById[r.id]; return <tr key={r.id} className="a" onClick={() => onSelect(r.id)}><td className="tk">{a.ticker}</td><td>{fmtMoney(r.qty)}</td><td>{fmtPx(r.avg,a.decimals)}</td><td>{fmtCompact(r.value)}</td><td className={cls(r.unrealized)}>{fmtCompact(r.unrealized)}</td><td className={cls(r.realized)}>{fmtCompact(r.realized)}</td><td className={cls(r.net)}>{fmtCompact(r.net)}</td><td>{r.qty !== 0 && <button onClick={e => {e.stopPropagation(); onFlatten(r.id);}}>Flat</button>}</td></tr>; })}
+          </tbody></table>
         )}
-        {tab === 'ord' && (
+        {tab === 'trade' && (<><h3>Working orders</h3>
           <table className="q">
-            <thead><tr><th>Asset</th><th>Side</th><th>Qty</th><th>Limit</th><th>Last</th><th></th></tr></thead>
+            <thead><tr>{names && <th>Who</th>}<th>Asset</th><th>Side</th><th>Qty</th><th>Limit</th><th>Last</th><th></th></tr></thead>
             <tbody>
               {working.map((o) => (
-                <tr key={o.id}><td className="tk">{runner.assetById[o.assetId].ticker}</td><td className={o.side === 'buy' ? 'up' : 'down'}>{o.side.toUpperCase()}</td>
+                <tr key={o.id}>{names && <td>{o.participantId ? names[o.participantId] ?? '' : ''}</td>}<td className="tk">{runner.assetById[o.assetId].ticker}</td><td className={o.side === 'buy' ? 'up' : 'down'}>{o.side.toUpperCase()}</td>
                   <td>{fmtMoney(o.qty)}</td><td>{fmtPx(o.limitPrice!, runner.assetById[o.assetId].decimals)}</td><td>{fmtPx(runner.price(o.assetId), runner.assetById[o.assetId].decimals)}</td>
                   <td><button onClick={() => onCancel(o.id)}>Cancel</button></td></tr>
               ))}
               {!working.length && <tr><td colSpan={6} className="dim" style={{ textAlign: 'left' }}>No working limit orders. <kbd>X</kbd> cancels all.</td></tr>}
             </tbody>
           </table>
-        )}
-        {tab === 'fill' && (
+          <h3>Fills</h3>
           <table className="q">
             <thead><tr><th>Day</th>{names && <th>Who</th>}<th>Asset</th><th>Side</th><th>Qty</th><th>Price</th><th>Real. P&amp;L</th></tr></thead>
             <tbody>
@@ -229,7 +146,7 @@ export function Blotter({ runner, onSelect, onFlatten, onCancel, names }: { runn
                   <td>{fmtPx(f.price, runner.assetById[f.assetId].decimals)}</td><td className={cls(f.realizedPnl)}>{f.realizedPnl ? fmtCompact(f.realizedPnl) : ''}</td></tr>
               ))}
             </tbody>
-          </table>
+          </table></>
         )}
       </div>
     </section>

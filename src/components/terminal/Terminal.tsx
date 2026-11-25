@@ -2,9 +2,9 @@
 import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from 'react';
 import type { SessionRunner } from '@engine/runner';
 import type { NewsEvent, Order, OrderInput, Side, OrderType } from '@engine/types';
-import { tickLabel } from '@engine/path';
 import { liveContribution } from '@engine/players';
 import { Blotter, NewsFeed, PriceChart, RiskPanel, Watchlist } from './panels';
+import { accountSummary, positionRows, commissionEstimate } from './helpers';
 import { cls, fmtClock, fmtCompact, fmtMoney, fmtPct, fmtPx } from '@/lib/format';
 
 export interface ClockState { elapsedMs: number }
@@ -188,7 +188,7 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
   }, [runner, send, flatten, preset, select, pauseAllowed, toast, cancelAll]);
 
   const m = runner.metrics;
-  const progress = runner.tick / N;
+  const summary = accountSummary(positionRows(runner.pos, runner.fills, id => runner.price(id)), runner.fills);
   const presets = runner.rules.orders.sizePresetsPctNav;
   const notional = qtyNum * (type === 'limit' ? lim : px);
   const posQty = runner.qty(selected);
@@ -201,17 +201,16 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
       <div className="top">
         <span className="ttl m-hide" title={title}>{title}</span>
         <div className="stat clock"><span>Time left</span><b ref={clockEl}>{fmtClock(N * secondsPerTick - initialElapsedMs / 1000)}</b></div>
-        <div className="stat m-hide"><span>Sim date</span><b>{tickLabel(runner.tick, runner.rules, runner.scenario, disguise)}</b></div>
-        <div className="prog m-hide"><div className="bar"><i style={{ width: `${progress * 100}%` }} /></div></div>
-        <div className="stat"><span>NAV (HKD)</span><b>{fmtMoney(m.equity)}</b></div>
-        <div className="stat"><span>P&amp;L</span><b className={cls(m.pnl)}>{fmtCompact(m.pnl)}</b></div>
-        <div className="stat"><span>Return</span><b className={cls(m.ret)}>{fmtPct(m.ret)}</b></div>
-        <div className="stat m-hide"><span>Sortino</span><b>{m.sortino.toFixed(2)}</b></div>
-        <div className="stat m-hide"><span>Max DD</span><b className={m.maxDD > 0.1 ? 'down' : ''}>{fmtPct(-m.maxDD, 1)}</b></div>
+        <div className="stat" title="Long positions only; shorts excluded"><span>Value of shares owned</span><b>{fmtCompact(summary.owned)}</b></div>
+        <div className="stat"><span>Margin requirement</span><b>{fmtCompact(m.marginUsed)}</b></div>
+        <div className="stat"><span>Realized P+L</span><b className={cls(summary.realized)}>{fmtCompact(summary.realized)}</b></div>
+        <div className="stat"><span>Unrealized P+L</span><b className={cls(summary.unrealized)}>{fmtCompact(summary.unrealized)}</b></div>
+        <div className="stat"><span>Commission Paid</span><b>{fmtCompact(summary.commission)}</b></div>
+        <div className="stat"><span>Available cash</span><b>{fmtCompact(m.cash)}</b></div>
+        <div className="stat"><span>Total PnL</span><b className={cls(m.pnl)}>{fmtCompact(m.pnl)}</b></div>
         <div className="stat score" title={`Return ${m.score.return.toFixed(0)} · Sortino ${m.score.sortino.toFixed(0)} · Drawdown ${m.score.drawdown.toFixed(0)} · Mandate ${m.score.mandate.toFixed(0)}`}>
           <span>Score</span><b>{m.score.composite.toFixed(1)}</b>
         </div>
-        {!team && <span className="small dim m-hide" style={{ fontSize: 10 }}>R {m.score.return.toFixed(0)} · S {m.score.sortino.toFixed(0)} · D {m.score.drawdown.toFixed(0)} · M {m.score.mandate.toFixed(0)}</span>}
         {m.mandate.some((c) => !c.ok) && <span className="banner" style={{ background: '#3d2f0c', color: 'var(--amber)' }}>MANDATE BREACH</span>}
         {m.marginCall && <span className="banner">MARGIN CALL</span>}
         <span className="m-hide" style={{ flex: 1 }} />
@@ -239,7 +238,7 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
           <NewsFeed runner={runner} disguise={disguise} hint={hint} onPick={(id) => { select(id); if (mtab === 'news') goTab('trade'); }} />
         </div>
         <div className="col mid">
-          <PriceChart runner={runner} assetId={selected} disguise={disguise} />
+          <PriceChart runner={runner} assetId={selected} disguise={disguise} secondsPerTick={secondsPerTick} />
           <div className="low">
             <Blotter runner={runner} onSelect={select} onFlatten={flatten} onCancel={cancelOne} names={team?.names} />
             <Watchlist runner={runner} selected={selected} onSelect={select} />
@@ -247,12 +246,9 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
         </div>
         <div className="col right">
           <section className="pan p-ticket">
-            <header><b>Order ticket</b><span>{a?.ticker}</span><span className="sp" /><span>Pos <b className={cls(posQty)}>{fmtMoney(posQty)}</b></span></header>
+            <header><b>EXCHANGE</b><span>{a?.ticker}</span><span className="sp" /><span>Pos <b className={cls(posQty)}>{fmtMoney(posQty)}</b></span></header>
             <div className="ticket">
-              <div className="r">
-                <button className={`side buy ${side === 'buy' ? 'on' : ''}`} onClick={() => setSide('buy')}>BUY <kbd>B</kbd></button>
-                <button className={`side sell ${side === 'sell' ? 'on' : ''}`} onClick={() => setSide('sell')}>SELL <kbd>S</kbd></button>
-              </div>
+              <input aria-label="Selected ticker" value={a?.ticker ?? ''} readOnly />
               <div className="r">
                 <label>Qty</label>
                 <input inputMode="numeric" value={qty} placeholder="units" onChange={(e) => setQty(e.target.value.replace(/[^\d,]/g, ''))} aria-label="Quantity" />
@@ -268,10 +264,15 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
               {type === 'limit' && (
                 <div className="r"><label>Limit</label><input inputMode="decimal" value={limitPx} onChange={(e) => setLimitPx(e.target.value)} aria-label="Limit price" /></div>
               )}
-              <div className="r">
-                <button className={`send ${side}`} onClick={() => send(input)}>{side === 'buy' ? 'BUY' : 'SELL'} {qtyNum ? fmtMoney(qtyNum) : ''} {a?.ticker} <kbd>⏎</kbd></button>
-                <button onClick={() => flatten(selected)} title="Flatten this asset" style={{ fontSize: 11 }}>Flat <kbd>F</kbd></button>
+              <div className="r exchange-buttons">
+                <button className={`side sell ${side === 'sell' ? 'on' : ''}`} onClick={() => { setSide('sell'); void send({ ...input, side: 'sell' }); }}>BID · SELL {runner.rules.costs.enabled ? '' : fmtPx(px, a.decimals)}</button>
+                <button className={`side buy ${side === 'buy' ? 'on' : ''}`} onClick={() => { setSide('buy'); void send({ ...input, side: 'buy' }); }}>OFFER · BUY {runner.rules.costs.enabled ? '' : fmtPx(px, a.decimals)}</button>
               </div>
+              {runner.rules.costs.enabled && <div className="info warn">Execution prices include the engine spread; quotes are unavailable here.</div>}
+              {type === 'limit' && <div className="info">Tick price shown is indicative; limit orders may fill on a later tick.</div>}
+              <div className="exchange-value">PRICE <b>{fmtMoney(notional)}</b></div>
+              <div className="exchange-value">COMMISSION <b>{fmtMoney(commissionEstimate(qtyNum, type === 'limit' ? lim : px, runner.rules.costs.enabled, runner.rules.costs.commissionBps))}</b></div>
+              <div className="r"><button onClick={() => flatten(selected)} title="Flatten this asset">Flat <kbd>F</kbd></button><span className="dim">Enter sends selected {side} side · {type === 'limit' ? 'limit order' : 'market order'}</span></div>
               <div className="info">
                 {qtyNum > 0 ? <>≈ HKD {fmtCompact(notional)} · {eq > 0 ? fmtPct(notional / eq, 1, false) : '-'} of NAV · after: {preview ? fmtPct(preview.weightAfter, 1) : ''}</> : <>Last {fmtPx(px, a?.decimals ?? 2)} · presets size by % of NAV</>}
               </div>
