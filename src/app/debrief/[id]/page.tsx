@@ -16,6 +16,7 @@ import { useJob, useStore, type CoachResult, type DebriefRow, type SessionRow } 
 import { buildPlayerStats, type PlayerBreakdown } from '@engine/players';
 import { cls, fmtCompact, fmtMoney, fmtPct, SRC_LABEL } from '@/lib/format';
 import { proxyBenchmark } from '@/lib/practice';
+import { benchmarkReturn } from '@engine/benchmark';
 import { sessionContext as coachPayload } from '@/lib/context';
 
 export default function Debrief({ params }: { params: Promise<{ id: string }> }) {
@@ -101,7 +102,7 @@ export default function Debrief({ params }: { params: Promise<{ id: string }> })
 
   const f = report.final;
   const w = normaliseWeights(session.rules.scoring.weights);
-  const benchmark = session.rules.practice?.preset === 'course' ? proxyBenchmark(runner.path.prices, runner.tick) : null;
+  const benchmark = session.rules.practice?.preset === 'course' ? session.rules.practice.benchmarkWeights ? benchmarkReturn(runner.path.prices, runner.tick, session.rules.practice.benchmarkWeights) : proxyBenchmark(runner.path.prices, runner.tick) : null;
   const name = (aid: string) => runner.assetById[aid]?.ticker ?? aid;
   const disguise = session.disguise;
   const title = runner.scenario.historical && disguise ? `${runner.scenario.historical.disguisedTitle} → ${runner.scenario.title}` : runner.scenario.title;
@@ -113,7 +114,7 @@ export default function Debrief({ params }: { params: Promise<{ id: string }> })
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <div>
             <h1>Debrief · {title}</h1>
-            {session.rules.practice?.preset === 'course' && <p className="small">Portfolio return {fmtPct(runner.metrics.ret)} · illustrative buy-and-hold proxy {benchmark === null ? 'unavailable for this scenario' : fmtPct(benchmark)} · excess {benchmark === null ? 'unavailable' : fmtPct(runner.metrics.ret - benchmark)}. Proxy uses trainer assets, not the official course benchmark; trainer score is not benchmark-relative.</p>}
+            {session.rules.practice?.preset === 'course' && <p className="small">Portfolio return {fmtPct(runner.metrics.ret)} · illustrative buy-and-hold proxy {benchmark === null ? 'unavailable for this scenario' : fmtPct(benchmark)} · excess {benchmark === null ? 'unavailable' : fmtPct(runner.metrics.ret - benchmark)}. Proxy uses trainer assets, not the official course benchmark; {session.rules.practice?.scoring ? 'the return-score component uses proxy excess return' : 'this older session uses absolute return for scoring'}.</p>}
             <div className="small dim"><span className={`tag ${session.difficulty}`}>{session.difficulty}</span>{session.hints && <span className="tag plain" style={{ marginLeft: 4, color: 'var(--purple)' }} title="Played with hints on: kept off the leaderboard">hints</span>} {session.mode} · client {session.client.name} · seed {session.seed} · rules {session.rules.version}</div>
           </div>
           <div className="row">
@@ -124,7 +125,7 @@ export default function Debrief({ params }: { params: Promise<{ id: string }> })
 
         <div className="grid kpis" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
           <div className="card kpi"><b style={{ color: 'var(--accent)', fontSize: 30 }}>{f.score.composite.toFixed(1)}</b><span>Composite score</span></div>
-          {([['Return', f.score.return, w.return, fmtPct(f.ret)], ['Sortino', f.score.sortino, w.sortino, f.sortino.toFixed(2)], ['Drawdown', f.score.drawdown, w.drawdown, fmtPct(-f.maxDD, 1)], ['Mandate', f.score.mandate, w.mandate, `${f.penalisedTicks} penalty ticks`]] as const).map(([l, s, wt, raw]) => (
+          {([[session.rules.practice?.scoring ? 'Excess return' : 'Return', f.score.return, w.return, session.rules.practice?.scoring && benchmark !== null ? fmtPct(f.ret - benchmark) : fmtPct(f.ret)], ['Sortino', f.score.sortino, w.sortino, f.sortino.toFixed(2)], ['Drawdown', f.score.drawdown, w.drawdown, fmtPct(-f.maxDD, 1)], ['Mandate', f.score.mandate, w.mandate, `${f.penalisedTicks} penalty ticks`]] as const).map(([l, s, wt, raw]) => (
             <div key={l} className="card kpi"><b>{s.toFixed(0)}<span className="dim" style={{ fontSize: 12 }}> /100 × {(wt * 100).toFixed(0)}%</span></b><span>{l}: {raw}</span>
               <div className="bar ok" style={{ marginTop: 6 }}><i style={{ width: `${s}%` }} /></div></div>
           ))}
@@ -158,7 +159,7 @@ export default function Debrief({ params }: { params: Promise<{ id: string }> })
 
         {players && (
           <div className="card">
-            <h2>Individual scores <span className="dim small">· each player&apos;s own trades, scored with the same formula as the team</span></h2>
+            <h2>Individual scores <span className="dim small">· {session.rules.practice?.scoring ? 'individual contribution scores use absolute return; only the team score uses benchmark excess' : 'each player’s own trades, scored with the same formula as the team'}</span></h2>
             <div className="grid" style={{ gridTemplateColumns: 'minmax(0, 1.3fr) minmax(0, 1fr)' }}>
               <table className="t small">
                 <thead><tr><th>Player</th><th className="r">Score</th><th className="r">R / S / D / M</th><th className="r">P&amp;L</th><th className="r">Max DD</th><th className="r">Trades</th><th className="r">Hit rate</th><th className="r">Avg reaction</th><th className="r">Breaches caused</th></tr></thead>

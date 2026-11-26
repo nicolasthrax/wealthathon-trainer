@@ -39,7 +39,7 @@ export default function Settings() {
         </div>
         <div className="card grid">
           <h2>Event rules</h2>
-          <p className="small dim">Practice sessions start with HKD 20,000,000. Previous sessions retain their saved rules.</p>
+          <p className="small dim">New course-inspired sessions start with USD 20,000,000; the legacy preset uses HKD 20,000,000. Previous sessions retain their saved rules.</p>
           <label className="row"><input type="checkbox" checked={o.costsEnabled ?? EVENT_RULES.costs.enabled} onChange={(e) => setO({ ...o, costsEnabled: e.target.checked })} />
             Transaction costs ({EVENT_RULES.costs.commissionBps}bp commission + per-class spreads)</label>
           <label className="f">Briefing phase (seconds) · file default {EVENT_RULES.clock.briefingSeconds}

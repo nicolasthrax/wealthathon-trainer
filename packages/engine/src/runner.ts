@@ -4,6 +4,7 @@ import type {
 } from './types';
 import { generatePath, type PricePath } from './path';
 import { evaluateMandate, tightenClient } from './mandate';
+import { benchmarkReturn } from './benchmark';
 import { computeScore, sortinoFrom } from './scoring';
 
 export interface RunnerOpts {
@@ -54,6 +55,7 @@ export class SessionRunner {
     this.client = tightenClient(o.client, o.rules.difficulty[o.difficulty].mandateTightness);
     this.path = o.path ?? generatePath(o.scenario, o.seed, o.rules, o.difficulty);
     this.N = this.path.ticks;
+    if (this.rules.practice?.scoring === 'proxy-excess-v1' && benchmarkReturn(this.path.prices, 0, this.rules.practice.benchmarkWeights ?? {}) === null) throw new Error('Course scoring requires all proxy benchmark price series; choose another scenario or the legacy preset.');
     for (const a of o.rules.assets) this.assetById[a.id] = a;
     this.cash = o.rules.startingCapital;
     this.peak = this.cash;
@@ -143,6 +145,9 @@ export class SessionRunner {
   private checkTrade(assetId: string, dq: number, px: number, fee: number): string | null {
     const q0 = this.qty(assetId), q1 = q0 + dq;
     if (q1 < 0 && !this.rules.shorting.allowed) return 'Short selling is disabled';
+    const cap = this.rules.practice?.maxAssetValue;
+    if (cap !== undefined && dq > 0 && q1 * px > cap + 1e-6) return `Asset limit: ${this.rules.baseCurrency} ${cap.toLocaleString('en-US')}`;
+    if (this.rules.practice?.scoring === 'proxy-excess-v1' && dq > 0 && this.cash + 1e-6 < dq * px + fee) return 'Insufficient cash; borrowing is disabled';
     const before = this.marginOf(this.pos);
     const after = this.marginOf({ ...this.pos, [assetId]: { qty: q1 } });
     if (after.used > before.used + 1e-6) {
@@ -290,6 +295,8 @@ export class SessionRunner {
     if (!checks) { const { w, cashW } = this.weights(); checks = evaluateMandate(this.client, w, cashW, this.rules); }
     for (const c of checks) c.breachTicks = c.ok ? 0 : this.breachRun[c.key] ?? 0;
     const ret = eq / start - 1;
+    const benchmark = this.rules.practice?.scoring === 'proxy-excess-v1' ? benchmarkReturn(this.path.prices, this.tick, this.rules.practice.benchmarkWeights ?? {}) : null;
+    if (this.rules.practice?.scoring === 'proxy-excess-v1' && benchmark === null) throw new Error('Proxy benchmark data unavailable at this tick');
     const sortino = sortinoFrom(this.n, this.sumR, this.sumDown2, this.rules);
     const peak = Math.max(this.peak, eq);
     const curDD = peak > 0 ? 1 - eq / peak : 0;
@@ -298,7 +305,7 @@ export class SessionRunner {
       tick: this.tick, equity: eq, cash: this.cash, pnl: eq - start, ret, sortino, maxDD, curDD,
       gross, leverage: eq > 0 ? gross / eq : 0, marginUsed: used, marginAvail: eq - used, maintenance: used * this.rules.margin.maintenanceFactor,
       marginCall: this.marginCallTicks > 0, bust: this.bust, exposureByClass, var95, mandate: checks, penalisedTicks: this.penalisedTicks,
-      score: computeScore({ ret, sortino, maxDD, penalisedFrac: this.penalisedTicks / this.N }, this.rules),
+      score: computeScore({ ret: benchmark === null ? ret : ret - benchmark, sortino, maxDD, penalisedFrac: this.penalisedTicks / this.N }, this.rules),
     };
   }
 }

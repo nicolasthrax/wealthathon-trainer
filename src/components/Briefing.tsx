@@ -84,13 +84,13 @@ export function Briefing({ runner, title, storyline, disguise, onStart, shared }
           <h3>Event rules (from config)</h3>
           <ul className="small" style={{ paddingLeft: 18, marginTop: 0 }}>
             <li>Starting capital <b>{rules.baseCurrency} {fmtMoney(rules.startingCapital)}</b>. One session = one simulated year ({tickLabel(runner.N, rules, runner.scenario, disguise).split('/')[1] ?? ''} trading days).</li>
-            {rules.practice?.preset === 'course' && <li>Course-inspired practice: long-only; three {rules.practice.rebalanceSeconds / 60}-minute rebalancing windows with frozen prices. Benchmark is a proxy using trainer assets, not the official course universe.</li>}
+            {rules.practice?.preset === 'course' && <li>Course-inspired practice: long-only; three {rules.practice.rebalanceSeconds / 60}-minute rebalancing windows with frozen prices. Benchmark is a proxy using trainer assets, not the official course universe. The USD 5M asset cap and no borrowing apply to new orders; the 90% minimum is a warning only. Loss cap and benchmark bands are not enforced.</li>}
             <li>{runner.scenario.events.length} headlines over the year. Prices react over a few ticks after each one.</li>
             <li>Market and limit orders. Shorting {rules.shorting.allowed ? 'allowed' : 'not allowed'}; leverage up to {rules.margin.allowed ? `${rules.margin.maxLeverage}x` : '1x'} (if the client allows it).
               Margin call below {Math.round(rules.margin.maintenanceFactor * 100)}% of initial margin, then forced liquidation after {rules.margin.marginCallGraceTicks} ticks.</li>
             <li>Transaction costs: {rules.costs.enabled ? `ON (${rules.costs.commissionBps}bp commission + spread)` : 'off'}.</li>
             <li>Mandate breaches start costing score after {rules.mandate.breachGraceTicks} ticks.</li>
-            <li>Trainer score (assumed, not official): {Math.round(rules.scoring.weights.return * 100)}% return · {Math.round(rules.scoring.weights.sortino * 100)}% Sortino · {Math.round(rules.scoring.weights.drawdown * 100)}% max drawdown · {Math.round(rules.scoring.weights.mandate * 100)}% mandate.</li>
+            <li>Trainer score (assumed, not official; return component uses {rules.practice?.scoring === 'proxy-excess-v1' ? 'proxy excess return' : 'absolute return'}): {Math.round(rules.scoring.weights.return * 100)}% return · {Math.round(rules.scoring.weights.sortino * 100)}% Sortino · {Math.round(rules.scoring.weights.drawdown * 100)}% max drawdown · {Math.round(rules.scoring.weights.mandate * 100)}% mandate.</li>
           </ul>
           <h3>Factor cheat-sheet</h3>
           <table className="t small">
@@ -125,6 +125,7 @@ export function Briefing({ runner, title, storyline, disguise, onStart, shared }
             <span>Invested <b className="num">{(sum * 100).toFixed(0)}%</b> · Gross <b className="num">{(gross * 100).toFixed(0)}%</b> · Cash <b className="num">{((1 - sum) * 100).toFixed(0)}%</b></span>
             <button onClick={() => setW({})} style={{ padding: '2px 8px', fontSize: 11 }}>Clear</button>
           </div>
+          {rules.practice?.scoring === 'proxy-excess-v1' && sum < 0.9 && <p className="note small">Course guidance: at least 90% invested at each quarter start. This is a warning, not enforced.</p>}
           <h3>Mandate check</h3>
           <div style={{ display: 'grid', gap: 5 }}>{checks.map((c) => <MandateMeter key={c.key} c={c} grace={rules.mandate.breachGraceTicks} />)}</div>
           {checks.some((c) => !c.ok) && <p className="note small">Your plan breaches the mandate. Fix it before the clock runs or you will lose mandate score.</p>}

@@ -57,7 +57,8 @@ export default function Home() {
       }
       const clients = await store.listClients();
       const client = clients[Math.floor(Math.random() * clients.length)];
-      const rules = makePracticeRules(await currentRules(store), preset, shortened);
+      if (preset === 'course' && m === 'historical') throw new Error('The course proxy benchmark requires complete trainer price paths. Use a synthetic scenario or the legacy preset.');
+      const rules = makePracticeRules(await currentRules(store), preset, quick || shortened, true);
       const seed = Math.random().toString(36).slice(2, 10);
       const row = await store.createSession({
         scenario: sc, client, seed, difficulty: m === 'historical' ? (quick ? 'medium' : difficulty) : sc.difficulty,
@@ -83,14 +84,14 @@ export default function Home() {
             <h1>Practice session</h1>
             <p className="dim" style={{ marginTop: 0 }}>
               Choose the course-based USD 20M long-only preset or the legacy HKD 20M rules. Set an opening allocation, then trade the news.
-              Score = {Math.round(EVENT_RULES.scoring.weights.return * 100)}% return, {Math.round(EVENT_RULES.scoring.weights.sortino * 100)}% Sortino,{' '}
+              Assumed trainer score = {Math.round(EVENT_RULES.scoring.weights.return * 100)}% {preset === 'course' ? 'proxy excess return' : 'absolute return'}, {Math.round(EVENT_RULES.scoring.weights.sortino * 100)}% Sortino,{' '}
               {Math.round(EVENT_RULES.scoring.weights.drawdown * 100)}% drawdown, {Math.round(EVENT_RULES.scoring.weights.mandate * 100)}% mandate compliance.
             </p>
             <div className="row" style={{ marginBottom: 16 }}>
               <button className="primary" disabled={busy || !scenarios.length} onClick={() => start(true)} style={{ padding: '10px 18px', fontSize: 15 }}>
-                ▶ Quick start: Medium, random client
+                ▶ Quick practice: Medium, random client
               </button>
-              <span className="small dim">{preset === 'course' ? 'USD 20M · long-only · rebalancing between quarters' : 'HKD 20M · legacy rules'}.</span>
+              <span className="small dim">{preset === 'course' ? 'USD 20M · 35 minutes (4 × 5 min trading + 3 × 5 min rebalancing)' : 'HKD 20M · 20 minutes (4 × 5 min trading)'}, plus briefing.</span>
             </div>
             <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div className="f" role="group" aria-label="Mode">Mode
@@ -112,7 +113,7 @@ export default function Home() {
               </label>
               <label className="f">Rules preset<select value={preset} onChange={e => setPreset(e.target.value as PracticePreset)}><option value="course">Course-based · USD 20M · long-only</option><option value="legacy">Legacy · HKD 20M</option></select></label>
               <label className="row small"><input type="checkbox" checked={shortened} onChange={e => setShortened(e.target.checked)} /> Shortened practice: 5-minute quarters{preset === 'course' ? ' and rebalancing windows' : ''}</label>
-              <div className="small dim" style={{gridColumn:'1 / -1'}}>{shortened ? '4 × 5 min' : '4 × 15 min'} trading{preset === 'course' ? shortened ? ' + 3 × 5 min frozen-price rebalancing.' : ' + 3 × 15 min frozen-price rebalancing.' : '; no rebalancing windows.'} The benchmark uses a trainer-asset proxy without currency conversion. Trainer instruments, mandates, leverage and scoring are not confirmed course or event rules.</div>
+              <div className="small dim" style={{gridColumn:'1 / -1'}}>{shortened ? '4 × 5 min' : '4 × 15 min'} trading{preset === 'course' ? shortened ? ' + 3 × 5 min frozen-price rebalancing.' : ' + 3 × 15 min frozen-price rebalancing.' : '; no rebalancing windows.'} The benchmark uses a trainer-asset proxy without currency conversion. The return-score component uses excess return; score weights and other rules are trainer assumptions, not official event rules.</div>
               {mode === 'historical' && (
                 <label className="row small" style={{ gridColumn: '1 / 3' }}>
                   <input type="checkbox" checked={disguise} onChange={(e) => setDisguise(e.target.checked)} />

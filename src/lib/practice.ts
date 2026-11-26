@@ -1,3 +1,4 @@
+import { benchmarkReturn } from '@engine/benchmark';
 import type { EventRules } from '@config/event-rules';
 
 /** Practice is one continuous simulated year, divided into four equal quarters. */
@@ -22,10 +23,11 @@ export const PROXY_BENCHMARK: Record<string, number> = {
   UST20: 0.15, HKGB: 0.15, GOLD: 0.10, BRENT: 0.10,
 };
 export type PracticePreset = 'course' | 'legacy';
-export function makePracticeRules(rules: EventRules, preset: PracticePreset, shortened = false): EventRules {
+export function makePracticeRules(rules: EventRules, preset: PracticePreset, shortened = false, enhanced = false): EventRules {
   return { ...rules, startingCapital: PRACTICE_CAPITAL, baseCurrency: preset === 'course' ? 'USD' : 'HKD',
     shorting: preset === 'course' ? { ...rules.shorting, allowed: false } : { ...rules.shorting },
-    practice: { preset, quarterSeconds: shortened ? 300 : 900, rebalanceSeconds: preset === 'course' ? (shortened ? 300 : 900) : 0 } };
+    margin: preset === 'course' ? { ...rules.margin, allowed: false, maxLeverage: 1 } : { ...rules.margin },
+    practice: { preset, quarterSeconds: shortened ? 300 : 900, rebalanceSeconds: preset === 'course' ? (shortened ? 300 : 900) : 0, ...(preset === 'course' && enhanced ? { scoring: 'proxy-excess-v1' as const, benchmarkWeights: { ...PROXY_BENCHMARK }, maxAssetValue: 5_000_000 } : {}) } };
 }
 /** Convert wall-clock session time to trading time. Rebalancing is between quarters only. */
 export function courseClock(elapsed: number, quarterSeconds: number, rebalanceSeconds: number) {
@@ -42,11 +44,5 @@ export function courseClock(elapsed: number, quarterSeconds: number, rebalanceSe
 }
 /** Buy-and-hold proxy based only on actual price paths; missing components make it unavailable. */
 export function proxyBenchmark(prices: Record<string, ArrayLike<number>>, tick: number): number | null {
-  let ret = 0;
-  for (const [id, weight] of Object.entries(PROXY_BENCHMARK)) {
-    const p = prices[id];
-    if (!p || !(p[0] > 0) || !Number.isFinite(p[tick])) return null;
-    ret += weight * (p[tick] / p[0] - 1);
-  }
-  return ret;
+  return benchmarkReturn(prices, tick, PROXY_BENCHMARK);
 }

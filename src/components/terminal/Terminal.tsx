@@ -4,6 +4,7 @@ import type { SessionRunner } from '@engine/runner';
 import type { NewsEvent, Order, OrderInput, Side, OrderType } from '@engine/types';
 import { liveContribution } from '@engine/players';
 import { Blotter, NewsFeed, PriceChart, RiskPanel, Watchlist } from './panels';
+import { benchmarkReturn } from '@engine/benchmark';
 import { practiceClock, courseClock, proxyBenchmark } from '@/lib/practice';
 import { accountSummary, positionRows, commissionEstimate } from './helpers';
 import { cls, fmtClock, fmtCompact, fmtMoney, fmtPct, fmtPx } from '@/lib/format';
@@ -201,7 +202,7 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
   const m = runner.metrics;
   const summary = accountSummary(positionRows(runner.pos, runner.fills, id => runner.price(id)), runner.fills);
   const presets = runner.rules.orders.sizePresetsPctNav;
-  const benchmark = runner.rules.practice?.preset === 'course' ? proxyBenchmark(runner.path.prices, runner.tick) : null;
+  const benchmark = runner.rules.practice?.preset === 'course' ? runner.rules.practice.benchmarkWeights ? benchmarkReturn(runner.path.prices, runner.tick, runner.rules.practice.benchmarkWeights) : proxyBenchmark(runner.path.prices, runner.tick) : null;
   const initialClock = runner.rules.practice ? courseClock(initialElapsedMs / 1000, runner.rules.practice.quarterSeconds, runner.rules.practice.rebalanceSeconds) : null;
   const notional = qtyNum * (type === 'limit' ? lim : px);
   const posQty = runner.qty(selected);
@@ -223,7 +224,7 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
         <div className="stat"><span>Available cash</span><b>{fmtMoney(m.cash)}</b></div>
         <div className="stat"><span>Total PnL</span><b className={cls(m.pnl)}>{fmtMoney(m.pnl)}</b></div>
         {runner.rules.practice?.preset === 'course' && <div className="stat" title="Illustrative buy-and-hold proxy: 12.5% each 2800, SPX, NKY, SX5E; 15% each UST20Y, HKGB; 10% each gold, Brent. Not the official benchmark; no FX conversion."><span>Portfolio / proxy / excess</span><b className={benchmark === null ? '' : cls(m.ret - benchmark)}>{benchmark === null ? 'Proxy unavailable' : `${fmtPct(m.ret)} / ${fmtPct(benchmark)} / ${fmtPct(m.ret - benchmark)}`}</b></div>}
-        <div className="stat score" title={`Trainer score, not official. Return ${m.score.return.toFixed(0)} · Sortino ${m.score.sortino.toFixed(0)} · Drawdown ${m.score.drawdown.toFixed(0)} · Mandate ${m.score.mandate.toFixed(0)}`}>
+        <div className="stat score" title={`Trainer score, not official. ${runner.rules.practice?.scoring ? 'Excess return' : 'Return'} ${m.score.return.toFixed(0)} · Sortino ${m.score.sortino.toFixed(0)} · Drawdown ${m.score.drawdown.toFixed(0)} · Mandate ${m.score.mandate.toFixed(0)}`}>
           <span>Trainer score</span><b>{m.score.composite.toFixed(1)}</b>
         </div>
         {m.mandate.some((c) => !c.ok) && <span className="banner" style={{ background: '#3d2f0c', color: 'var(--amber)' }}>MANDATE BREACH</span>}
@@ -263,7 +264,7 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
           <section className="pan p-ticket">
             <header><b>EXCHANGE</b><span>{a?.ticker}</span><span className="sp" /><span>Pos <b className={cls(posQty)}>{fmtMoney(posQty)}</b></span></header>
             <div className="ticket">
-              {phase === 'rebalance' && <div className="rebalance-info"><b>REBALANCING · prices frozen</b><div>Trading remains open. Compare current weights with initial proxy targets below. Proxy uses 2800, SPX, NKY, SX5E, UST20Y, HKGB, gold and Brent; no currency conversion. Trainer mandates and score are assumptions.</div><table className="q"><thead><tr><th>Class</th><th>Current</th><th>Proxy target</th></tr></thead><tbody>{([['equity', 0.5], ['bond', 0.3], ['commodity', 0.2], ['fx', 0]] as const).map(([key, target]) => <tr key={key}><td>{key}</td><td>{fmtPct(m.exposureByClass[key], 1, false)}</td><td>{fmtPct(target, 1, false)}</td></tr>)}</tbody></table></div>}
+              {phase === 'rebalance' && <div className="rebalance-info"><b>REBALANCING · prices frozen</b><div>Trading remains open. {m.equity > 0 && (m.equity - m.cash) / m.equity < 0.9 && <strong className="down">Below 90% invested at the next quarter start (warning only). </strong>}Compare current weights with initial proxy targets below. Proxy uses 2800, SPX, NKY, SX5E, UST20Y, HKGB, gold and Brent; no currency conversion. Trainer mandates and score are assumptions.</div><table className="q"><thead><tr><th>Class</th><th>Current</th><th>Proxy target</th></tr></thead><tbody>{([['equity', 0.5], ['bond', 0.3], ['commodity', 0.2], ['fx', 0]] as const).map(([key, target]) => <tr key={key}><td>{key}</td><td>{fmtPct(m.exposureByClass[key], 1, false)}</td><td>{fmtPct(target, 1, false)}</td></tr>)}</tbody></table></div>}
               <input aria-label="Selected ticker" value={a?.ticker ?? ''} readOnly />
               <div className="r">
                 <label>Qty</label>
@@ -281,14 +282,14 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
                 <div className="r"><label>Limit</label><input inputMode="decimal" value={limitPx} onChange={(e) => setLimitPx(e.target.value)} aria-label="Limit price" /></div>
               )}
               <div className="r exchange-buttons">
-                <button className={`side sell ${side === 'sell' ? 'on' : ''}`} onClick={() => { setSide('sell'); void send({ ...input, side: 'sell' }); }}>BID · SELL {runner.rules.costs.enabled ? '' : fmtPx(px, a.decimals)}</button>
-                <button className={`side buy ${side === 'buy' ? 'on' : ''}`} onClick={() => { setSide('buy'); void send({ ...input, side: 'buy' }); }}>OFFER · BUY {runner.rules.costs.enabled ? '' : fmtPx(px, a.decimals)}</button>
+                <button className={`side sell ${side === 'sell' ? 'on' : ''}`} onClick={() => setSide('sell')}>BID · SELL {runner.rules.costs.enabled ? '' : fmtPx(px, a.decimals)}</button>
+                <button className={`side buy ${side === 'buy' ? 'on' : ''}`} onClick={() => setSide('buy')}>OFFER · BUY {runner.rules.costs.enabled ? '' : fmtPx(px, a.decimals)}</button>
               </div>
               {runner.rules.costs.enabled && <div className="info warn">Execution prices include the engine spread; quotes are unavailable here.</div>}
               {type === 'limit' && <div className="info">Tick price shown is indicative; limit orders may fill on a later tick.</div>}
               <div className="exchange-value">PRICE <b>{fmtMoney(notional)}</b></div>
               <div className="exchange-value">COMMISSION <b>{fmtMoney(commissionEstimate(qtyNum, type === 'limit' ? lim : px, runner.rules.costs.enabled, runner.rules.costs.commissionBps))}</b></div>
-              <div className="r"><button onClick={() => flatten(selected)} title="Flatten this asset">Flat <kbd>F</kbd></button><span className="dim">Enter sends selected {side} side · {type === 'limit' ? 'limit order' : 'market order'}</span></div>
+              <div className="r"><button className={`send ${side}`} onClick={() => void send(input)}>Send {side.toUpperCase()} <kbd>⏎</kbd></button><button onClick={() => flatten(selected)} title="Flatten this asset">Flat <kbd>F</kbd></button><span className="dim">Review before sending · {type === 'limit' ? 'limit order' : 'market order'}</span></div>
               <div className="info">
                 {qtyNum > 0 ? <>≈ {runner.rules.baseCurrency} {fmtCompact(notional)} · {eq > 0 ? fmtPct(notional / eq, 1, false) : '-'} of NAV · after: {preview ? fmtPct(preview.weightAfter, 1) : ''}</> : <>Last {fmtPx(px, a?.decimals ?? 2)} · presets size by % of NAV</>}
               </div>

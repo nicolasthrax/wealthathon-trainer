@@ -49,7 +49,7 @@ export default function Play({ params }: { params: Promise<{ id: string }> }) {
           const pool = list.filter((x) => x.source === 'synthetic' && x.difficulty === 'medium');
           const meta = pool[Math.floor(Math.random() * pool.length)];
           const row = await store.createSession({ scenario: meta, client: clients[Math.floor(Math.random() * clients.length)], seed: Math.random().toString(36).slice(2, 10),
-            difficulty: 'medium', disguise: false, session_minutes: 60, rules: makePracticeRules(rules, 'course') });
+            difficulty: 'medium', disguise: false, session_minutes: 20, rules: makePracticeRules(rules, 'course', true, true) });
           router.replace(`/play/${row.id}${window.location.search}`);
           return;
         }
