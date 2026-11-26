@@ -4,7 +4,7 @@ import type { SessionRunner } from '@engine/runner';
 import type { NewsEvent, Order, OrderInput, Side, OrderType } from '@engine/types';
 import { liveContribution } from '@engine/players';
 import { Blotter, NewsFeed, PriceChart, RiskPanel, Watchlist } from './panels';
-import { practiceClock } from '@/lib/practice';
+import { practiceClock, courseClock, proxyBenchmark } from '@/lib/practice';
 import { accountSummary, positionRows, commissionEstimate } from './helpers';
 import { cls, fmtClock, fmtCompact, fmtMoney, fmtPct, fmtPx } from '@/lib/format';
 
@@ -65,6 +65,8 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
   const [toasts, setToasts] = useState<Toast[]>([]);
   const clock = useRef({ elapsed: initialElapsedMs, last: 0, paused: false });
   const clockEl = useRef<HTMLElement>(null);
+  const [phase, setPhase] = useState(() => runner.rules.practice ? courseClock(initialElapsedMs / 1000, runner.rules.practice.quarterSeconds, runner.rules.practice.rebalanceSeconds).phase : 'trading');
+  const lastSaved = useRef(0);
   const quarterEl = useRef<HTMLElement>(null);
   const finished = useRef(false);
   const lastMarginCall = useRef(false);
@@ -89,20 +91,25 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
       const c = clock.current, now = performance.now(), tm = teamRef.current;
       if (tm) c.elapsed = tm.elapsedMs(); else if (!c.paused) c.elapsed += now - c.last;
       c.last = now;
-      let target = Math.min(N, Math.floor(c.elapsed / 1000 / secondsPerTick));
+      const format = runner.rules.practice;
+      const qc = format ? courseClock(c.elapsed / 1000, format.quarterSeconds, format.rebalanceSeconds) : null;
+      let target = qc ? Math.min(N, Math.floor(qc.tradingFraction * N + 1e-9)) : Math.min(N, Math.floor(c.elapsed / 1000 / secondsPerTick));
+      if (qc) setPhase(prev => prev === qc.phase ? prev : qc.phase);
       const hold = lessonRef.current?.holdAt() ?? null;
       if (hold !== null && target >= hold) { target = hold; c.elapsed = Math.min(c.elapsed, hold * secondsPerTick * 1000); }
       const before = runner.tick;
       if (tm) tm.advance(target); else while (runner.tick < target && !runner.finished) runner.step();
       const stepped = runner.tick !== before;
-      if (clockEl.current) clockEl.current.textContent = fmtClock(N * secondsPerTick - c.elapsed / 1000);
-      if (quarterEl.current && practiceQuarters) { const q = practiceClock(c.elapsed / 1000); quarterEl.current.textContent = `Q${q.quarter} · ${fmtClock(q.quarterRemaining)}`; }
+      if (clockEl.current) clockEl.current.textContent = fmtClock(qc ? qc.totalRemaining : N * secondsPerTick - c.elapsed / 1000);
+      if (quarterEl.current && qc) quarterEl.current.textContent = `Q${qc.quarter} ${qc.phase === 'rebalance' ? 'rebalance' : ''} · ${fmtClock(qc.remaining)}`;
+      else if (quarterEl.current && practiceQuarters) { const q = practiceClock(c.elapsed / 1000); quarterEl.current.textContent = `Q${q.quarter} · ${fmtClock(q.quarterRemaining)}`; }
       if (stepped) {
         bump();
         if (runner.metrics.marginCall && !lastMarginCall.current) toast('MARGIN CALL: reduce exposure now or positions will be liquidated');
         lastMarginCall.current = runner.metrics.marginCall;
-        if (runner.tick % 10 === 0) onProgress(c.elapsed);
+
       }
+      if (c.elapsed - lastSaved.current >= 1000) { onProgress(c.elapsed); lastSaved.current = c.elapsed; }
       if (hold !== null && runner.tick === hold) lessonRef.current?.onHold(hold);
       if (runner.finished && !finished.current) { finished.current = true; onFinish(); }
     }, 100);
@@ -194,6 +201,8 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
   const m = runner.metrics;
   const summary = accountSummary(positionRows(runner.pos, runner.fills, id => runner.price(id)), runner.fills);
   const presets = runner.rules.orders.sizePresetsPctNav;
+  const benchmark = runner.rules.practice?.preset === 'course' ? proxyBenchmark(runner.path.prices, runner.tick) : null;
+  const initialClock = runner.rules.practice ? courseClock(initialElapsedMs / 1000, runner.rules.practice.quarterSeconds, runner.rules.practice.rebalanceSeconds) : null;
   const notional = qtyNum * (type === 'limit' ? lim : px);
   const posQty = runner.qty(selected);
   const landedCount = runner.scenario.events.filter((e) => runner.path.eventTicks[e.id] <= runner.tick).length;
@@ -204,8 +213,8 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
     <div className="term" data-mtab={mtab}>
       <div className="top">
         <span className="ttl m-hide" title={title}>{title}</span>
-        <div className="stat clock"><span>Session left</span><b ref={clockEl}>{fmtClock(N * secondsPerTick - initialElapsedMs / 1000)}</b></div>
-        {practiceQuarters && <div className="stat clock"><span>Quarter · time left</span><b ref={quarterEl}>{(() => { const q = practiceClock(initialElapsedMs / 1000); return `Q${q.quarter} · ${fmtClock(q.quarterRemaining)}`; })()}</b></div>}
+        <div className="stat clock"><span>Session left</span><b ref={clockEl}>{fmtClock(initialClock?.totalRemaining ?? N * secondsPerTick - initialElapsedMs / 1000)}</b></div>
+        {(practiceQuarters || initialClock) && <div className="stat clock"><span>Quarter · time left</span><b ref={quarterEl}>{(() => { if (initialClock) return `Q${initialClock.quarter} ${initialClock.phase === 'rebalance' ? 'rebalance' : ''} · ${fmtClock(initialClock.remaining)}`; const q = practiceClock(initialElapsedMs / 1000); return `Q${q.quarter} · ${fmtClock(q.quarterRemaining)}`; })()}</b></div>}
         <div className="stat" title="Long positions only; shorts excluded"><span>Value of shares owned</span><b>{fmtMoney(summary.owned)}</b></div>
         <div className="stat"><span>Margin requirement</span><b>{fmtMoney(m.marginUsed)}</b></div>
         <div className="stat"><span>Realized P+L</span><b className={cls(summary.realized)}>{fmtMoney(summary.realized)}</b></div>
@@ -213,8 +222,9 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
         <div className="stat"><span>Commission Paid</span><b>{fmtMoney(summary.commission)}</b></div>
         <div className="stat"><span>Available cash</span><b>{fmtMoney(m.cash)}</b></div>
         <div className="stat"><span>Total PnL</span><b className={cls(m.pnl)}>{fmtMoney(m.pnl)}</b></div>
-        <div className="stat score" title={`Return ${m.score.return.toFixed(0)} · Sortino ${m.score.sortino.toFixed(0)} · Drawdown ${m.score.drawdown.toFixed(0)} · Mandate ${m.score.mandate.toFixed(0)}`}>
-          <span>Score</span><b>{m.score.composite.toFixed(1)}</b>
+        {runner.rules.practice?.preset === 'course' && <div className="stat" title="Illustrative buy-and-hold proxy: 12.5% each 2800, SPX, NKY, SX5E; 15% each UST20Y, HKGB; 10% each gold, Brent. Not the official benchmark; no FX conversion."><span>Portfolio / proxy / excess</span><b className={benchmark === null ? '' : cls(m.ret - benchmark)}>{benchmark === null ? 'Proxy unavailable' : `${fmtPct(m.ret)} / ${fmtPct(benchmark)} / ${fmtPct(m.ret - benchmark)}`}</b></div>}
+        <div className="stat score" title={`Trainer score, not official. Return ${m.score.return.toFixed(0)} · Sortino ${m.score.sortino.toFixed(0)} · Drawdown ${m.score.drawdown.toFixed(0)} · Mandate ${m.score.mandate.toFixed(0)}`}>
+          <span>Trainer score</span><b>{m.score.composite.toFixed(1)}</b>
         </div>
         {m.mandate.some((c) => !c.ok) && <span className="banner" style={{ background: '#3d2f0c', color: 'var(--amber)' }}>MANDATE BREACH</span>}
         {m.marginCall && <span className="banner">MARGIN CALL</span>}
@@ -253,6 +263,7 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
           <section className="pan p-ticket">
             <header><b>EXCHANGE</b><span>{a?.ticker}</span><span className="sp" /><span>Pos <b className={cls(posQty)}>{fmtMoney(posQty)}</b></span></header>
             <div className="ticket">
+              {phase === 'rebalance' && <div className="rebalance-info"><b>REBALANCING · prices frozen</b><div>Trading remains open. Compare current weights with initial proxy targets below. Proxy uses 2800, SPX, NKY, SX5E, UST20Y, HKGB, gold and Brent; no currency conversion. Trainer mandates and score are assumptions.</div><table className="q"><thead><tr><th>Class</th><th>Current</th><th>Proxy target</th></tr></thead><tbody>{([['equity', 0.5], ['bond', 0.3], ['commodity', 0.2], ['fx', 0]] as const).map(([key, target]) => <tr key={key}><td>{key}</td><td>{fmtPct(m.exposureByClass[key], 1, false)}</td><td>{fmtPct(target, 1, false)}</td></tr>)}</tbody></table></div>}
               <input aria-label="Selected ticker" value={a?.ticker ?? ''} readOnly />
               <div className="r">
                 <label>Qty</label>
@@ -279,7 +290,7 @@ export function Terminal({ runner, title, secondsPerTick, disguise, initialElaps
               <div className="exchange-value">COMMISSION <b>{fmtMoney(commissionEstimate(qtyNum, type === 'limit' ? lim : px, runner.rules.costs.enabled, runner.rules.costs.commissionBps))}</b></div>
               <div className="r"><button onClick={() => flatten(selected)} title="Flatten this asset">Flat <kbd>F</kbd></button><span className="dim">Enter sends selected {side} side · {type === 'limit' ? 'limit order' : 'market order'}</span></div>
               <div className="info">
-                {qtyNum > 0 ? <>≈ HKD {fmtCompact(notional)} · {eq > 0 ? fmtPct(notional / eq, 1, false) : '-'} of NAV · after: {preview ? fmtPct(preview.weightAfter, 1) : ''}</> : <>Last {fmtPx(px, a?.decimals ?? 2)} · presets size by % of NAV</>}
+                {qtyNum > 0 ? <>≈ {runner.rules.baseCurrency} {fmtCompact(notional)} · {eq > 0 ? fmtPct(notional / eq, 1, false) : '-'} of NAV · after: {preview ? fmtPct(preview.weightAfter, 1) : ''}</> : <>Last {fmtPx(px, a?.decimals ?? 2)} · presets size by % of NAV</>}
               </div>
               {preview && !preview.ok && <div className="info err">Will be rejected: {preview.reason}</div>}
               {preview?.ok && preview.newBreaches.length > 0 && <div className="info warn">⚠ Would breach mandate: {preview.newBreaches.join(', ')}</div>}

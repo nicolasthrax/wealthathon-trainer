@@ -310,3 +310,7 @@ table.q button { padding: 0 5px; font-size: 9px; height: 14px; line-height: 12px
   .term .right .p-risk { grid-column: auto; grid-row: auto; align-self: stretch; max-height: none; overflow-y: auto; }
   .term .right > div:last-child { display: none; }
 }
+.term .rebalance-info { padding: 6px; color: var(--text); background: #123d56; border: 1px solid #32769a; }
+.term .rebalance-info > b { color: #79d6ff; }
+.term .rebalance-info .q td, .term .rebalance-info .q th { height: 17px; }
+@media (max-width: 820px) { .term .body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); } }

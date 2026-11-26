@@ -287,7 +287,7 @@ export const EVENT_RULES = {
   newsCategories: ['central_bank', 'earnings', 'geopolitics', 'china_policy', 'macro_data', 'commodities', 'credit'] as const,
 };
 
-export type EventRules = typeof EVENT_RULES;
+export type EventRules = typeof EVENT_RULES & { practice?: { preset: 'course' | 'legacy'; quarterSeconds: number; rebalanceSeconds: number } };
 
 /** User-adjustable overrides (Settings page) merged over the file defaults. */
 export interface RuleOverrides {

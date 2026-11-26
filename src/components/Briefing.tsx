@@ -8,7 +8,7 @@ import { fmtClock, fmtMoney, fmtPx, GOAL_LABEL } from '@/lib/format';
 
 const RISK_LABEL = ['', 'Very conservative', 'Conservative', 'Balanced', 'Growth', 'Aggressive'];
 
-export function ClientCard({ client }: { client: SessionRunner['client'] }) {
+export function ClientCard({ client, capital, currency = 'HKD' }: { client: SessionRunner['client']; capital?: number; currency?: string }) {
   return (
     <div className="clientcard">
       <div className="small dim" style={{ letterSpacing: '0.1em' }}>PRIVATE BANKING · CLIENT ONBOARDING</div>
@@ -16,7 +16,7 @@ export function ClientCard({ client }: { client: SessionRunner['client'] }) {
       <div className="dim small">{client.occupation}</div>
       <dl>
         <dt>Age</dt><dd>{client.age}</dd>
-        <dt>Investable</dt><dd className="num">HKD {fmtMoney(client.wealthHKD)}</dd>
+        <dt>Investable</dt><dd className="num">{currency} {fmtMoney(capital ?? client.wealthHKD)}</dd>
         <dt>Goal</dt><dd><b>{GOAL_LABEL[client.goal]}</b><div className="small dim">{client.goalDetail}</div></dd>
         <dt>Risk profile</dt><dd><b>{client.riskProfile}/5</b> · {RISK_LABEL[client.riskProfile]}</dd>
         <dt>Horizon</dt><dd>{client.horizonYears} years</dd>
@@ -72,7 +72,7 @@ export function Briefing({ runner, title, storyline, disguise, onStart, shared }
         </div>
       </div>
       <div className="cols">
-        <div><ClientCard client={runner.client} /></div>
+        <div><ClientCard client={runner.client} capital={rules.startingCapital} currency={rules.baseCurrency} /></div>
         <div>
           <h3>Starting regime</h3>
           <div className="card" style={{ marginBottom: 12 }}>
@@ -83,13 +83,14 @@ export function Briefing({ runner, title, storyline, disguise, onStart, shared }
           <p className="small" style={{ marginTop: 0 }}>{storyline}</p>
           <h3>Event rules (from config)</h3>
           <ul className="small" style={{ paddingLeft: 18, marginTop: 0 }}>
-            <li>Starting capital <b>HKD {fmtMoney(rules.startingCapital)}</b>. One session = one simulated year ({tickLabel(runner.N, rules, runner.scenario, disguise).split('/')[1] ?? ''} trading days).</li>
+            <li>Starting capital <b>{rules.baseCurrency} {fmtMoney(rules.startingCapital)}</b>. One session = one simulated year ({tickLabel(runner.N, rules, runner.scenario, disguise).split('/')[1] ?? ''} trading days).</li>
+            {rules.practice?.preset === 'course' && <li>Course-inspired practice: long-only; three {rules.practice.rebalanceSeconds / 60}-minute rebalancing windows with frozen prices. Benchmark is a proxy using trainer assets, not the official course universe.</li>}
             <li>{runner.scenario.events.length} headlines over the year. Prices react over a few ticks after each one.</li>
             <li>Market and limit orders. Shorting {rules.shorting.allowed ? 'allowed' : 'not allowed'}; leverage up to {rules.margin.allowed ? `${rules.margin.maxLeverage}x` : '1x'} (if the client allows it).
               Margin call below {Math.round(rules.margin.maintenanceFactor * 100)}% of initial margin, then forced liquidation after {rules.margin.marginCallGraceTicks} ticks.</li>
             <li>Transaction costs: {rules.costs.enabled ? `ON (${rules.costs.commissionBps}bp commission + spread)` : 'off'}.</li>
             <li>Mandate breaches start costing score after {rules.mandate.breachGraceTicks} ticks.</li>
-            <li>Score: {Math.round(rules.scoring.weights.return * 100)}% return · {Math.round(rules.scoring.weights.sortino * 100)}% Sortino · {Math.round(rules.scoring.weights.drawdown * 100)}% max drawdown · {Math.round(rules.scoring.weights.mandate * 100)}% mandate.</li>
+            <li>Trainer score (assumed, not official): {Math.round(rules.scoring.weights.return * 100)}% return · {Math.round(rules.scoring.weights.sortino * 100)}% Sortino · {Math.round(rules.scoring.weights.drawdown * 100)}% max drawdown · {Math.round(rules.scoring.weights.mandate * 100)}% mandate.</li>
           </ul>
           <h3>Factor cheat-sheet</h3>
           <table className="t small">
@@ -103,7 +104,7 @@ export function Briefing({ runner, title, storyline, disguise, onStart, shared }
           </table>
         </div>
         <div style={{ borderRight: 0 }}>
-          <h3>Opening allocation (% of NAV, negative = short)</h3>
+          <h3>Opening allocation (% of NAV{rules.shorting.allowed ? ', negative = short' : ', long-only'})</h3>
           <table className="alloc small">
             <tbody>
               {rules.assets.filter((a) => runner.path.prices[a.id]).map((a) => {

@@ -15,6 +15,7 @@ import { headlineOf } from '@/components/terminal/panels';
 import { useJob, useStore, type CoachResult, type DebriefRow, type SessionRow } from '@/lib/store';
 import { buildPlayerStats, type PlayerBreakdown } from '@engine/players';
 import { cls, fmtCompact, fmtMoney, fmtPct, SRC_LABEL } from '@/lib/format';
+import { proxyBenchmark } from '@/lib/practice';
 import { sessionContext as coachPayload } from '@/lib/context';
 
 export default function Debrief({ params }: { params: Promise<{ id: string }> }) {
@@ -100,6 +101,7 @@ export default function Debrief({ params }: { params: Promise<{ id: string }> })
 
   const f = report.final;
   const w = normaliseWeights(session.rules.scoring.weights);
+  const benchmark = session.rules.practice?.preset === 'course' ? proxyBenchmark(runner.path.prices, runner.tick) : null;
   const name = (aid: string) => runner.assetById[aid]?.ticker ?? aid;
   const disguise = session.disguise;
   const title = runner.scenario.historical && disguise ? `${runner.scenario.historical.disguisedTitle} → ${runner.scenario.title}` : runner.scenario.title;
@@ -111,6 +113,7 @@ export default function Debrief({ params }: { params: Promise<{ id: string }> })
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <div>
             <h1>Debrief · {title}</h1>
+            {session.rules.practice?.preset === 'course' && <p className="small">Portfolio return {fmtPct(runner.metrics.ret)} · illustrative buy-and-hold proxy {benchmark === null ? 'unavailable for this scenario' : fmtPct(benchmark)} · excess {benchmark === null ? 'unavailable' : fmtPct(runner.metrics.ret - benchmark)}. Proxy uses trainer assets, not the official course benchmark; trainer score is not benchmark-relative.</p>}
             <div className="small dim"><span className={`tag ${session.difficulty}`}>{session.difficulty}</span>{session.hints && <span className="tag plain" style={{ marginLeft: 4, color: 'var(--purple)' }} title="Played with hints on: kept off the leaderboard">hints</span>} {session.mode} · client {session.client.name} · seed {session.seed} · rules {session.rules.version}</div>
           </div>
           <div className="row">
@@ -125,7 +128,7 @@ export default function Debrief({ params }: { params: Promise<{ id: string }> })
             <div key={l} className="card kpi"><b>{s.toFixed(0)}<span className="dim" style={{ fontSize: 12 }}> /100 × {(wt * 100).toFixed(0)}%</span></b><span>{l}: {raw}</span>
               <div className="bar ok" style={{ marginTop: 6 }}><i style={{ width: `${s}%` }} /></div></div>
           ))}
-          <div className="card kpi"><b>{fmtMoney(f.equity)}</b><span>Final NAV (HKD){f.liquidations ? ` · ${f.liquidations} liquidation(s)` : ''}</span></div>
+          <div className="card kpi"><b>{fmtMoney(f.equity)}</b><span>Final NAV ({session.rules.baseCurrency}){f.liquidations ? ` · ${f.liquidations} liquidation(s)` : ''}</span></div>
         </div>
 
         <div className="grid" style={{ gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)' }}>
@@ -256,7 +259,7 @@ export default function Debrief({ params }: { params: Promise<{ id: string }> })
               {report.breaches.map((b, i) => <tr key={i}><td>{b.label}</td><td className="num dim">{tickLabel(b.startTick, runner.rules)} → {tickLabel(b.endTick, runner.rules)}</td><td className="r num">{b.endTick - b.startTick + 1} ticks</td><td className={`r num ${b.penalisedTicks ? 'down' : ''}`}>{b.penalisedTicks} penalised</td></tr>)}
             </tbody></table>
           </div>
-          <div><ClientCard client={runner.client} /></div>
+          <div><ClientCard client={runner.client} capital={runner.rules.startingCapital} currency={runner.rules.baseCurrency} /></div>
         </div>
       </main>
     </>

@@ -7,7 +7,7 @@ import { currentRules, useStore, type Profile, type ScenarioMeta, type ScoreRow,
 import { EVENT_RULES } from '@config/event-rules';
 import type { Difficulty } from '@engine/types';
 import { fmtPct } from '@/lib/format';
-import { PRACTICE_MINUTES, practiceRules } from '@/lib/practice';
+import { makePracticeRules, type PracticePreset } from '@/lib/practice';
 import { usePresence } from '@/lib/presence';
 
 const DIFFS: Difficulty[] = ['easy', 'medium', 'hard'];
@@ -21,6 +21,8 @@ export default function Home() {
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
   const [scenarioId, setScenarioId] = useState<string>('random');
   const [disguise, setDisguise] = useState(true);
+  const [preset, setPreset] = useState<PracticePreset>('course');
+  const [shortened, setShortened] = useState(false);
   const [hints, setHints] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -55,11 +57,11 @@ export default function Home() {
       }
       const clients = await store.listClients();
       const client = clients[Math.floor(Math.random() * clients.length)];
-      const rules = practiceRules(await currentRules(store));
+      const rules = makePracticeRules(await currentRules(store), preset, shortened);
       const seed = Math.random().toString(36).slice(2, 10);
       const row = await store.createSession({
         scenario: sc, client, seed, difficulty: m === 'historical' ? (quick ? 'medium' : difficulty) : sc.difficulty,
-        disguise: m === 'historical' ? disguise : false, session_minutes: PRACTICE_MINUTES, rules, team, hints: !quick && hints,
+        disguise: m === 'historical' ? disguise : false, session_minutes: rules.practice!.quarterSeconds * 4 / 60, rules, team, hints: !quick && hints,
       });
       router.push(`/play/${row.id}`);
     } catch (e) { setErr((e as Error).message); setBusy(false); }
@@ -80,7 +82,7 @@ export default function Home() {
           <div className="card">
             <h1>Practice session</h1>
             <p className="dim" style={{ marginTop: 0 }}>
-              One simulated year across four continuous 15-minute quarters (60 minutes total), starting with HKD 20 million. Read the client brief, set an opening allocation, then trade the news.
+              Choose the course-based USD 20M long-only preset or the legacy HKD 20M rules. Set an opening allocation, then trade the news.
               Score = {Math.round(EVENT_RULES.scoring.weights.return * 100)}% return, {Math.round(EVENT_RULES.scoring.weights.sortino * 100)}% Sortino,{' '}
               {Math.round(EVENT_RULES.scoring.weights.drawdown * 100)}% drawdown, {Math.round(EVENT_RULES.scoring.weights.mandate * 100)}% mandate compliance.
             </p>
@@ -88,7 +90,7 @@ export default function Home() {
               <button className="primary" disabled={busy || !scenarios.length} onClick={() => start(true)} style={{ padding: '10px 18px', fontSize: 15 }}>
                 ▶ Quick start: Medium, random client
               </button>
-              <span className="small dim">Four quarters · 15 minutes each · HKD 20M starting capital.</span>
+              <span className="small dim">{preset === 'course' ? 'USD 20M · long-only · rebalancing between quarters' : 'HKD 20M · legacy rules'}.</span>
             </div>
             <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div className="f" role="group" aria-label="Mode">Mode
@@ -108,7 +110,9 @@ export default function Home() {
                   {options.map((s) => <option key={s.id} value={s.id}>{mode === 'historical' && disguise ? s.disguisedTitle ?? 'Hidden episode' : s.title}{s.used_count ? ` · played ${s.used_count}×` : ''}</option>)}
                 </select>
               </label>
-              <div className="f">Session format <span>4 quarters × 15 minutes · HKD 20M</span></div>
+              <label className="f">Rules preset<select value={preset} onChange={e => setPreset(e.target.value as PracticePreset)}><option value="course">Course-based · USD 20M · long-only</option><option value="legacy">Legacy · HKD 20M</option></select></label>
+              <label className="row small"><input type="checkbox" checked={shortened} onChange={e => setShortened(e.target.checked)} /> Shortened practice: 5-minute quarters{preset === 'course' ? ' and rebalancing windows' : ''}</label>
+              <div className="small dim" style={{gridColumn:'1 / -1'}}>{shortened ? '4 × 5 min' : '4 × 15 min'} trading{preset === 'course' ? shortened ? ' + 3 × 5 min frozen-price rebalancing.' : ' + 3 × 15 min frozen-price rebalancing.' : '; no rebalancing windows.'} The benchmark uses a trainer-asset proxy without currency conversion. Trainer instruments, mandates, leverage and scoring are not confirmed course or event rules.</div>
               {mode === 'historical' && (
                 <label className="row small" style={{ gridColumn: '1 / 3' }}>
                   <input type="checkbox" checked={disguise} onChange={(e) => setDisguise(e.target.checked)} />
